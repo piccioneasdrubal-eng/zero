@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "XevBots Dashboard",
+  "version": "1.0.0",
+  "description": "Advanced Agar.io Bot Controller Extension",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "XevBots Control"
+  },
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "ws://*.agar.io/*",
+    "https://*.google.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agar.io Mode</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        font-family: "Inter", sans-serif;
+        box-sizing: border-box;
+      }
+      body {
+        background-color: #f9f9f9;
+        color: #1e1e1e;
+        width: 200px;
+        padding: 10px;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        text-align: center;
+        color: #333;
+      }
+      .mode-button {
+        background-color: #fff;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 9px 16px;
+        font-size: 14px;
+        margin: 8px 0;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+      .mode-button:hover {
+        background-color: #f0f0f0;
+      }
+      .mode-button.active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+        box-shadow: 0 2px 6px rgba(0, 123, 255, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Select Mode</h1>
+    <div class="mode-button" data-mode="delta">Delta Script</div>
+    <div class="mode-button" data-mode="doublesplit">Doublesplit Script</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "XevBots Dashboard",
+  "description": "A modern, high-performance control panel for the XevBots Agar.io helper. Features real-time bot management, token status monitoring, and an AI strategy assistant powered by Gemini.",
+  "requestFramePermissions": []
+}
