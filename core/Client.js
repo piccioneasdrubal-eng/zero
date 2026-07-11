@@ -2,6 +2,7 @@ import { WebSocket } from "ws";
 import { Minion } from "./Minion.js";
 import { buffers, logger } from "../utils/index.js";
 import { SmartBuffer } from "smart-buffer";
+import { config } from "../config/index.js";
 export default class Client {
   ws;
   bots;
@@ -40,10 +41,32 @@ export default class Client {
     this.botVShield = false;
     this.stoppedBots = true;
     this.startedBots = false;
+    this.authenticated = false;
+    this.tokenLabel = "";
   }
   async handleMessage(buffer) {
     const reader = SmartBuffer.fromBuffer(buffer);
     const opcode = reader.readUInt8();
+    if (!this.authenticated) {
+      if (opcode === 8) {
+        const token = reader.readStringNT();
+        const entry = config.accessTokens.find(t => t.token === token && t.active);
+        if (entry) {
+          this.authenticated = true;
+          this.tokenLabel = entry.label;
+          this.ws.send(Buffer.from([8, 1]));
+          logger.info("Auth OK: " + entry.label);
+          return;
+        }
+        logger.warn("Auth FAILED: invalid token");
+        this.ws.send(Buffer.from([8, 0]));
+        this.ws.close();
+        return;
+      }
+      logger.warn("Rejected msg opcode " + opcode + " (not authenticated)");
+      this.ws.close();
+      return;
+    }
     switch (opcode) {
       case 0:
         this.server = reader.readStringNT();
@@ -115,10 +138,10 @@ export default class Client {
             bot.facebookBots
         ).length;
         this.ws?.send(
-          buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`)
+          buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
         );
       }, 1000);
-      logger.info(`Client Starting Bots.`);
+      logger.info("Client Starting Bots.");
     }
   }
   stopBots() {
@@ -134,7 +157,7 @@ export default class Client {
       this.startedBots = false;
       this.botTimeout.length = 0;
       this.ws?.send(Buffer.from([1]));
-      logger.warn(`Client Bots Stopped!`);
+      logger.warn("Client Bots Stopped!");
     }
   }
 }
