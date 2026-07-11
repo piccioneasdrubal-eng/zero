@@ -3,8 +3,10 @@ import Client from './core/Client.js';
 import { helper, logger } from "./utils/index.js";
 import { WebSocketServer } from 'ws';
 import TokenManager from './core/TokenManager.js';
+import CrasherCoordinator from './core/CrasherCoordinator.js';
 
 const manager = new TokenManager();
+const coordinator = new CrasherCoordinator();
 const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 
@@ -19,6 +21,7 @@ manager.checkTokens((v) => { });
 
 wss.on('connection', (ws) => {
   const client = new Client(ws);
+  client.crasherCoordinator = coordinator;
   logger.info('Client Connected');
 
   const authTimeout = setTimeout(() => {
@@ -32,6 +35,7 @@ wss.on('connection', (ws) => {
     clearTimeout(authTimeout);
     if (client.authenticated) {
       logger.warn('Client Disconnected! (' + client.tokenLabel + ')');
+      coordinator.stopCrash(client);
     } else {
       logger.warn('Client Disconnected! (unauthenticated)');
     }
