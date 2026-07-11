@@ -9,7 +9,6 @@ const manager = new TokenManager();
 const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 
-// Health check HTTP per Render & co.
 server.on('request', (req, res) => {
   if (req.url === '/' || req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -17,11 +16,7 @@ server.on('request', (req, res) => {
   }
 });
 
-let serverListening = false;
-
-manager.checkTokens((v) => {
-  // TokenManager handles its own logging
-});
+manager.checkTokens((v) => { /* TokenManager handles its own logging */ });
 
 wss.on('connection', (ws) => {
   const client = new Client(ws);
@@ -31,11 +26,7 @@ wss.on('connection', (ws) => {
     logger.warn('Client Disconnected!');
   };
   ws.on('message', (buffer) => {
-    try {
-      client.handleMessage(buffer);
-    } catch (e) {
-      logger.warn('Server: corrupted message – dropped');
-    }
+    try { client.handleMessage(buffer); } catch (e) { logger.warn('Server: corrupted message - dropped'); }
   });
   ws.on('close', handleDisconnect);
   ws.on('error', handleDisconnect);
@@ -43,32 +34,30 @@ wss.on('connection', (ws) => {
 
 const port = process.env.PORT || config.serverSettings.port;
 
-// 1. Load existing proxies immediately
-helper.setupProxies();
+// Start with NO proxies - bots connect directly while validation runs
+helper.proxies = [];
 
-// 2. Start server immediately
 server.listen(port, () => {
-  serverListening = true;
-  logger.info(`Server started on port ${port} with ${helper.proxies.length} proxies`);
+  logger.info(`Server started on port ${port} (proxies still validating...)`);
 });
 
-// 3. Fetch + VALIDATE proxies in background, then reload
+// Fetch + VALIDATE proxies in background, populate only when done
 async function refreshProxies() {
   try {
     const count = await fetchProxies({ skipTest: true });
     if (count > 0) {
-      helper.setupProxies(); // reload from file
-      logger.info(`Fetched ${count} raw proxies, validating...`);
+      helper.setupProxies(); // load from file
+      logger.info(`Fetched ${count} raw proxies, validating (TCP -> HTTPS)...`);
       const valid = await helper.validateProxies(helper.proxies);
-      helper.proxies = valid;
-      logger.info(`Validated: ${valid.length} working proxies ready`);
+      helper.proxies = valid; // NOW replace with only working ones
+      logger.info(`Validated: ${valid.length} working proxies ready! Bots will use them.`);
     }
   } catch (e) {
     logger.warn(`Proxy refresh failed: ${e.message}`);
   }
 }
 
-// Initial fetch + validate
+// Kick off validation
 refreshProxies();
 
 // Refresh every hour
