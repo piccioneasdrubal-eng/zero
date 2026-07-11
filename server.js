@@ -3,10 +3,6 @@ import Client from './core/Client.js';
 import { helper, logger } from "./utils/index.js";
 import { WebSocketServer } from 'ws';
 import TokenManager from './core/TokenManager.js';
-import { fetchProxies } from './scripts/fetchProxies.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 const manager = new TokenManager();
 const server = helper.createServer();
@@ -24,9 +20,22 @@ manager.checkTokens((v) => { });
 wss.on('connection', (ws) => {
   const client = new Client(ws);
   logger.info('Client Connected');
+
+  const authTimeout = setTimeout(() => {
+    if (!client.authenticated) {
+      logger.warn('Client auth timeout (10s) — closing');
+      ws.close();
+    }
+  }, 10000);
+
   const handleDisconnect = () => {
+    clearTimeout(authTimeout);
+    if (client.authenticated) {
+      logger.warn('Client Disconnected! (' + client.tokenLabel + ')');
+    } else {
+      logger.warn('Client Disconnected! (unauthenticated)');
+    }
     client.stopBots();
-    logger.warn('Client Disconnected!');
   };
   ws.on('message', (buffer) => {
     try { client.handleMessage(buffer); } catch (e) { logger.warn('Server: corrupted message - dropped'); }
@@ -37,19 +46,23 @@ wss.on('connection', (ws) => {
 
 const port = process.env.PORT || config.serverSettings.port;
 
-// Start with NO proxies
 helper.proxies = [];
 
 server.listen(port, () => {
-  logger.info(`Server started on port ${port}`);
+  logger.info('Server started on port ' + port);
   if (config.proxySettings.enableProxy) {
-    logger.info('Proxy enabled, connecting bots direct during validation');
+    logger.info('Proxy enabled, bots direct during validation');
     refreshProxies();
     setInterval(refreshProxies, 60 * 60 * 1000);
   } else {
     logger.info('Proxy DISABLED: all bots connect direct');
   }
 });
+
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { fetchProxies } from './scripts/fetchProxies.js';
 
 async function refreshProxies() {
   try {
@@ -58,13 +71,13 @@ async function refreshProxies() {
       const filePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config/proxies.txt');
       const data = fs.readFileSync(filePath, 'utf-8');
       const allProxies = data.split('\n').map(p => p.trim()).filter(p => p);
-      logger.info(`Fetched ${count} raw proxies, validating ...`);
+      logger.info('Fetched ' + count + ' raw proxies, validating...');
       const valid = await helper.validateProxies(allProxies);
       helper.proxies = valid;
-      logger.info(`Validated: ${valid.length} working proxies ready!`);
+      logger.info('Validated: ' + valid.length + ' working proxies ready!');
     }
   } catch (e) {
-    logger.warn(`Proxy refresh failed: ${e.message}`);
+    logger.warn('Proxy refresh failed: ' + e.message);
   }
 }
 
