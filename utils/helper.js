@@ -51,7 +51,7 @@ export const helper = {
         }
         if (changed) this.saveMassBoostData(data);
     },
-    testProxy(proxyStr, timeout = 2500) {
+    testProxyTcp(proxyStr, timeout = 2000) {
         const [host, portStr] = proxyStr.split(':');
         const port = parseInt(portStr) || 80;
         return new Promise((resolve) => {
@@ -62,19 +62,60 @@ export const helper = {
             try { socket.connect(port, host); } catch { clearTimeout(timer); resolve(false); }
         });
     },
+    testProxyHttps(proxyStr, timeout = 5000) {
+        const protocol = config.proxySettings.protocol;
+        const proxyUrl = `${protocol}://${proxyStr}`;
+        return new Promise((resolve) => {
+            try {
+                const agent = new HttpsProxyAgent(proxyUrl);
+                const req = https.get('https://agar.io', {
+                    agent,
+                    timeout,
+                    rejectUnauthorized: false,
+                    headers: { 'User-Agent': 'Mozilla/5.0' }
+                }, (res) => {
+                    resolve(true);
+                    res.resume();
+                    req.destroy();
+                });
+                req.on('error', () => resolve(false));
+                req.on('timeout', () => { req.destroy(); resolve(false); });
+            } catch { resolve(false); }
+        });
+    },
     async validateProxies(proxies, concurrency = 200) {
-        const working = [];
         const total = proxies.length;
+        logger.info(`Validating ${total} proxies (TCP → HTTPS)...`);
+        let stage1 = [];
         let tested = 0;
         for (let i = 0; i < proxies.length; i += concurrency) {
             const batch = proxies.slice(i, i + concurrency);
-            const results = await Promise.all(batch.map(p => this.testProxy(p)));
+            const results = await Promise.all(batch.map(p => this.testProxyTcp(p)));
+            for (let j = 0; j < batch.length; j++) {
+                if (results[j]) stage1.push(batch[j]);
+            }
+            tested += batch.length;
+            if (tested % 2000 === 0 || tested === total) {
+                logger.process(tested, total, `TCP: ${stage1.length} alive`);
+            }
+        }
+        logger.info(`Stage 1 (TCP): ${stage1.length}/${total} reachable`);
+        if (stage1.length === 0) { logger.warn('No proxies passed TCP test'); return []; }
+        const working = [];
+        tested = 0;
+        const stage1Total = stage1.length;
+        for (let i = 0; i < stage1.length; i += concurrency) {
+            const batch = stage1.slice(i, i + concurrency);
+            const results = await Promise.all(batch.map(p => this.testProxyHttps(p)));
             for (let j = 0; j < batch.length; j++) {
                 if (results[j]) working.push(batch[j]);
             }
             tested += batch.length;
-            logger.process(tested, total, `${working.length} working`);
+            if (tested % 1000 === 0 || tested === stage1Total) {
+                logger.process(tested, stage1Total, `HTTPS: ${working.length} working`);
+            }
         }
+        logger.info(`Stage 2 (HTTPS): ${working.length}/${stage1Total} working proxies ready`);
         return working;
     },
     setupProxies() {
