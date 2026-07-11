@@ -102,7 +102,7 @@ export default class Client {
         if (this.connectedBots < maxBots && this.bots.length < maxBots) {
           this.bots.push(new Minion(this));
         }
-      }, 300);
+      }, 50);
       this.countInt = setInterval(() => {
         this.bots = this.bots.filter((bot) => !bot.isClosed);
         const aliveBots = this.bots.filter(
@@ -117,7 +117,7 @@ export default class Client {
         this.ws?.send(
           buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`)
         );
-      }, 300);
+      }, 1000);
       logger.info(`Client Starting Bots.`);
     }
   }
