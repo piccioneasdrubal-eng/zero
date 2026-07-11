@@ -11,7 +11,7 @@ const wss = new WebSocketServer({ server: server });
 server.on('request', (req, res) => {
   if (req.url === '/' || req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('XevBots OK | DEPLOY: 21:59:06 UTC');
+    res.end('XevBots OK');
   }
 });
 
@@ -23,7 +23,7 @@ wss.on('connection', (ws) => {
 
   const authTimeout = setTimeout(() => {
     if (!client.authenticated) {
-      logger.warn('Client auth timeout (10s) - closing');
+      logger.warn('Client auth timeout (10s) — closing');
       ws.close();
     }
   }, 10000);
