@@ -19,7 +19,7 @@ server.on('request', (req, res) => {
   }
 });
 
-manager.checkTokens((v) => { /* TokenManager handles its own logging */ });
+manager.checkTokens((v) => { });
 
 wss.on('connection', (ws) => {
   const client = new Client(ws);
@@ -37,39 +37,35 @@ wss.on('connection', (ws) => {
 
 const port = process.env.PORT || config.serverSettings.port;
 
-// Start with NO proxies - bots connect directly
+// Start with NO proxies
 helper.proxies = [];
 
 server.listen(port, () => {
-  logger.info(`Server started on port ${port} (bots go DIRECT until proxy validation completes)`);
+  logger.info(`Server started on port ${port}`);
+  if (config.proxySettings.enableProxy) {
+    logger.info('Proxy enabled, connecting bots direct during validation');
+    refreshProxies();
+    setInterval(refreshProxies, 60 * 60 * 1000);
+  } else {
+    logger.info('Proxy DISABLED: all bots connect direct');
+  }
 });
 
-// Fetch + validate proxies in background - NEVER pollute helper.proxies until done
 async function refreshProxies() {
   try {
     const count = await fetchProxies({ skipTest: true });
     if (count > 0) {
-      // Read from file directly - does NOT touch helper.proxies
       const filePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config/proxies.txt');
       const data = fs.readFileSync(filePath, 'utf-8');
       const allProxies = data.split('\n').map(p => p.trim()).filter(p => p);
-
-      logger.info(`Fetched ${count} raw proxies, validating (TCP -> HTTPS)...`);
+      logger.info(`Fetched ${count} raw proxies, validating ...`);
       const valid = await helper.validateProxies(allProxies);
-
-      // ATOMIC: only now set the pool
       helper.proxies = valid;
-      logger.info(`Validated: ${valid.length} working proxies ready! Bots will use them now.`);
+      logger.info(`Validated: ${valid.length} working proxies ready!`);
     }
   } catch (e) {
     logger.warn(`Proxy refresh failed: ${e.message}`);
   }
 }
-
-// Kick off validation
-refreshProxies();
-
-// Refresh every hour
-setInterval(refreshProxies, 60 * 60 * 1000);
 
 export { manager };
