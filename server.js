@@ -8,7 +8,7 @@ const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 manager.checkTokens((v) => {
     logger.info(`Checking token done ${v} of ${manager.ts.length} tokens`, 'TokenManager');
-    server.listen(config.serverSettings.port, () => {
+   server.listen(process.env.PORT || config.serverSettings.port, () => {
         logger.info(`Server started on port ${config.serverSettings.port}.`);
     });
     wss.on('connection', (ws) => {
