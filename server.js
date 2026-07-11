@@ -9,7 +9,7 @@ const manager = new TokenManager();
 const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 
-// ═══ Health check HTTP per Render & co. ═══
+// Health check HTTP per Render & co.
 server.on('request', (req, res) => {
   if (req.url === '/' || req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -34,41 +34,44 @@ wss.on('connection', (ws) => {
     try {
       client.handleMessage(buffer);
     } catch (e) {
-      logger.warn('Server: corrupted message — dropped');
+      logger.warn('Server: corrupted message – dropped');
     }
   });
   ws.on('close', handleDisconnect);
   ws.on('error', handleDisconnect);
 });
 
-// Avvia server SUBITO, fetch proxy in background (non bloccare l'avvio)
-// Port: Render assegna PORT env, altrimenti usa config
 const port = process.env.PORT || config.serverSettings.port;
 
-// 1. Carica proxy esistenti subito
+// 1. Load existing proxies immediately
 helper.setupProxies();
 
-// 2. Avvia server immediatamente (non aspettare fetchProxies)
+// 2. Start server immediately
 server.listen(port, () => {
   serverListening = true;
   logger.info(`Server started on port ${port} with ${helper.proxies.length} proxies`);
 });
 
-// 3. Refresh proxy in background (skip test, usa pre-validati)
-fetchProxies({skipTest:true}).then(count => {
-  if (count > 0) helper.setupProxies(); // ricarica con i nuovi
-  logger.info(`Fetched ${count} fresh proxies`);
-}).catch(e => {
-  logger.warn(`Proxy fetch failed: ${e.message}`);
-});
-
-// Aggiorna proxy ogni ora
-setInterval(() => {
-  fetchProxies({skipTest:true}).then(count => {
-    logger.info(`Refreshed ${count} proxies`);
-  }).catch(e => {
+// 3. Fetch + VALIDATE proxies in background, then reload
+async function refreshProxies() {
+  try {
+    const count = await fetchProxies({ skipTest: true });
+    if (count > 0) {
+      helper.setupProxies(); // reload from file
+      logger.info(`Fetched ${count} raw proxies, validating...`);
+      const valid = await helper.validateProxies(helper.proxies);
+      helper.proxies = valid;
+      logger.info(`Validated: ${valid.length} working proxies ready`);
+    }
+  } catch (e) {
     logger.warn(`Proxy refresh failed: ${e.message}`);
-  });
-}, 60 * 60 * 1000);
+  }
+}
+
+// Initial fetch + validate
+refreshProxies();
+
+// Refresh every hour
+setInterval(refreshProxies, 60 * 60 * 1000);
 
 export { manager };
