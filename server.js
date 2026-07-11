@@ -4,6 +4,9 @@ import { helper, logger } from "./utils/index.js";
 import { WebSocketServer } from 'ws';
 import TokenManager from './core/TokenManager.js';
 import { fetchProxies } from './scripts/fetchProxies.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const manager = new TokenManager();
 const server = helper.createServer();
@@ -34,23 +37,29 @@ wss.on('connection', (ws) => {
 
 const port = process.env.PORT || config.serverSettings.port;
 
-// Start with NO proxies - bots connect directly while validation runs
+// Start with NO proxies - bots connect directly
 helper.proxies = [];
 
 server.listen(port, () => {
-  logger.info(`Server started on port ${port} (proxies still validating...)`);
+  logger.info(`Server started on port ${port} (bots go DIRECT until proxy validation completes)`);
 });
 
-// Fetch + VALIDATE proxies in background, populate only when done
+// Fetch + validate proxies in background - NEVER pollute helper.proxies until done
 async function refreshProxies() {
   try {
     const count = await fetchProxies({ skipTest: true });
     if (count > 0) {
-      helper.setupProxies(); // load from file
+      // Read from file directly - does NOT touch helper.proxies
+      const filePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config/proxies.txt');
+      const data = fs.readFileSync(filePath, 'utf-8');
+      const allProxies = data.split('\n').map(p => p.trim()).filter(p => p);
+
       logger.info(`Fetched ${count} raw proxies, validating (TCP -> HTTPS)...`);
-      const valid = await helper.validateProxies(helper.proxies);
-      helper.proxies = valid; // NOW replace with only working ones
-      logger.info(`Validated: ${valid.length} working proxies ready! Bots will use them.`);
+      const valid = await helper.validateProxies(allProxies);
+
+      // ATOMIC: only now set the pool
+      helper.proxies = valid;
+      logger.info(`Validated: ${valid.length} working proxies ready! Bots will use them now.`);
     }
   } catch (e) {
     logger.warn(`Proxy refresh failed: ${e.message}`);
