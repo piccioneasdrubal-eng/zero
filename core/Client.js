@@ -139,10 +139,12 @@ export default class Client {
       this.stoppedBots = false;
       const maxBots = this.botAmount;
       this.botInt = setInterval(() => {
-        if (this.connectedBots < maxBots && this.bots.length < maxBots) {
+        const maxInFlight = maxBots * 2;
+        if (this.connectedBots < maxBots && this.bots.length < maxInFlight) {
+          this.bots.push(new Minion(this));
           this.bots.push(new Minion(this));
         }
-      }, 50);
+      }, 5);
       this.countInt = setInterval(() => {
         this.bots = this.bots.filter((bot) => !bot.isClosed);
         const aliveBots = this.bots.filter(
