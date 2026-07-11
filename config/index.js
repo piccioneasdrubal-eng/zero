@@ -9,6 +9,9 @@ export const config = {
         protocol: "http",
         enableProxy: false
     },
+    accessTokens: [
+        { token: "ZERO_THE_LEGEND_X_LIFE", label: "Admin", active: true },
+    ],
     facebookBotSettings: {
         skin: {
             names: [
