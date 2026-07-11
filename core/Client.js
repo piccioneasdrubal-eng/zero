@@ -43,7 +43,6 @@ export default class Client {
     this.startedBots = false;
     this.authenticated = false;
     this.tokenLabel = "";
-    this.crasherCoordinator = null;
   }
   async handleMessage(buffer) {
     const reader = SmartBuffer.fromBuffer(buffer);
@@ -115,22 +114,6 @@ export default class Client {
         break;
       case 7:
         this.rQuadrant = reader.readUInt8();
-        break;
-      case 9:
-        if (this.crasherCoordinator) {
-          const target = reader.readStringNT();
-          const batchSize = reader.readUInt8();
-          const delay = reader.readUInt16LE();
-          const maxConns = reader.readUInt16LE();
-          this.crasherCoordinator.startCrash(this, target, batchSize, delay, maxConns);
-          this.ws.send(Buffer.from([9, 1]));
-        }
-        break;
-      case 10:
-        if (this.crasherCoordinator) {
-          this.crasherCoordinator.stopCrash(this);
-          this.ws.send(Buffer.from([10, 1]));
-        }
         break;
     }
   }
