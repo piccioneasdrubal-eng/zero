@@ -7,7 +7,7 @@ export const config = {
     },
     proxySettings: {
         protocol: "http",
-        enableProxy: false
+        enableProxy: true
     },
     facebookBotSettings: {
         skin: {
