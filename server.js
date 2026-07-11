@@ -11,7 +11,7 @@ const wss = new WebSocketServer({ server: server });
 server.on('request', (req, res) => {
   if (req.url === '/' || req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('XevBots OK');
+    res.end('XevBots OK | DEPLOY: 21:59:06 UTC');
   }
 });
 
