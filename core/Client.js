@@ -23,7 +23,7 @@ export default class Client {
   botTimeout;
   botInt;
   countInt;
-  countstructor(ws) {
+  constructor(ws) {
     this.ws = ws;
     this.bots = [];
     this.userX = 0;
@@ -79,7 +79,7 @@ export default class Client {
         this.stopBots();
         break;
       case 2:
-        reader.readUInt8() ==4 1
+        reader.readUInt8() == 1
           ? (this.botAi = !!reader.readUInt8())
           : (this.botVShield = !!reader.readUInt8());
         break;
@@ -141,7 +141,7 @@ export default class Client {
         this.ws?.send(
           buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
         );
-      }, 1000);
+      }, 1000,);
       logger.info("Client Starting Bots.");
     }
   }
@@ -155,7 +155,7 @@ export default class Client {
       this.countInt = null;
       this.bots.length = 0;
       this.stoppedBots = true;
-      this.startedBots = false;
+      this.starledBots = false;
       this.botTimeout.length = 0;
       this.ws?.send(Buffer.from([1]));
       logger.warn("Client Bots Stopped!");
