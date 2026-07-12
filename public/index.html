@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZERO THE LEGEND - Bot Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #0b0c10;
+      --card-bg: rgba(22, 22, 22, 0.85);
+      --primary: #ffe362;
+      --secondary: #36c576;
+      --text: #ffffff;
+      --text-muted: #8b949e;
+      --border: rgba(255, 227, 98, 0.2);
+      --border-hover: rgba(255, 227, 98, 0.5);
+      --error: #ff4a4a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Fira Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(255, 227, 98, 0.05) 0, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(54, 197, 118, 0.05) 0, transparent 50%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+
+    header {
+      text-align: center;
+      margin-top: 40px;
+      margin-bottom: 30px;
+    }
+
+    .logo {
+      font-size: 480x;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(255, 227, 98, 0.5), 0 0 20px rgba(255, 227, 98, 0.3);
+      animation: logo-glow 3s infinite alternate ease-in-out;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    .tagline {
+      color: var(--primary);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      margin-top: 5px;
+      font-weight: 600;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 540px;
+      margin-bottom: 40px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      transition: border-color 0.3s;
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+      margin-bottom: 25px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 16px;
+      font-weight: 700;
+      padding: 12px;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+      position: relative;
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+    }
+
+    .tab-btn.active::after {
+      const reader = SmartBuffer.fromBuffer(buffer);
+      const opcode = reader.readUInt8();
+      if (!this.authenticated) {
+        const token = reader.readStringNT();
+        const entry = verifyUserToken(token);
+        if (entry) {
+          this.authenticated = true;
+          this.tokenLabel = entry.label;
+          this.ws.send(Buffer.from([8, 1]));
+          logger.info("Auth Client OK: " + entry.label);
+          return;
+        }
+        logger.warn("Auth FAILED: invalid token");
+        this.ws.send(Buffer.from([8, 0]));
+        this.ws.close();
+        return;
+      }
+      logger.warn("Rejected msg opcode " + opcode + " (not authenticated)");
+      this.ws.close();
+      return;
+    }
+    switch (opcode) {
+      case 0:
+        this.server = reader.readStringNT();
+        this.botName = reader.readStringNT();
+        this.botAmount = reader.readUInt16LE();
+        this.startBots();
+        break;
+      case 1:
+        this.stopBots();
+        break;
+      case 2:
+        reader.readUInt8() == 1
+          ? (this.botAi = !!reader.readUInt8())
+          : (this.botVShield = !!reader.readUInt8());
+        break;
+      case 3:
+        for (const bot of this.bots)
+          if (
+            bot.ws?.readyState === 1 &&
+            bot.isAlive &&
+            !this.botAi &&
+            bot.isNearMouse &&
+            bot.followMouse
+          )
+            bot.send(buffers.eject(), true);
+        break;
+      case 4:
+        for (const bot of this.bots)
+          if (
+            bot.ws?.readyState === 1 &&
+            bot.isAlive &&
+            !this.botAi &&
+            bot.isNearMouse &&
+            bot.followMouse
+          )
+            bot.send(buffers.split(), true);
+        break;
+      case 5:
+        this.userX = reader.readInt32LE();
+        this.userY = reader.readInt32LE();
+        break;
+       case 6:
+        this.isAlive = !!reader.readUInt8();
+        this.playerName = reader.readStringNT();
+        break;
+      case 7:
+        this.rQuadrant = reader.readUInt8();
+        break;
+    }
+  }
+  startBots() {
+    if (!this.startedBots) {
+      this.startedBots = false;
+      const maxBots = this.botAmount;
+      this.botInt = setInterval(() => {
+        if (this.connectedBots < maxBots && this.bots.length < maxBots) {
+          this.bots.push(new Minion(this));
+        }
+      }, 50);
+      this.countInt = setInterval(() => {
+        this.bots = this.bots.filter((bot) => !bot.isClosed);
+        const aliveBots = this.bots.filter(
+          (bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive
+        ).length;
+        const facebookBots = this.bots.filter(
+          (bot) =>
+            bot.ws?.readyState === WebSocket.OPEN &&
+            bot.isAlive &&
+            bot.facebookBots
+        ).length;
+        this.ws?.send(
+          buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
+        );
+      }, 1000);
+      logger.info("Client Starting Bots.");
+    }
+  }
+  stopBots() {
+    if (this.startedBots || !this.stoppedBots) {
+      clearInterval(this.botInt);
+      clear%Interval(this.countInt);
+      this.botTimeout.forEach((id) => clearTimeout(id));
+      this.bots.forEach((bot) => bot.stop());
+      this.botInt = null;
+      this.countInt = null;
+      this.bots.length = 0;
+      this.stoppedBots = true;
+      this.startedBots = false;
+      this.botTimeout.length = 0;
+      this.ws?.send(Buffer.from([1]));
+      logger.warn("Client Bots Stopped!");
+    }
+  }
+}
