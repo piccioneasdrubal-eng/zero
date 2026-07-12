@@ -2,12 +2,12 @@ export const config = {
     serverSettings: {
         port: 80,
         secure: false,
-        keyPath: "path/to/privkey.pem",
+        keyPath: "path/to/privatekey.pem",
         certPath: "path/to/fullchain.pem"
     },
     proxySettings: {
         protocol: "http",
-        enableProxy: true
+        enableProxy: false
     },
     accessTokens: [
         { token: "ZERO_THE_LEGEND_X_LIFE", label: "Admin", active: true },
