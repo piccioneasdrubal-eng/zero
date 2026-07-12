@@ -23,7 +23,7 @@ export default class Client {
   botTimeout;
   botInt;
   countInt;
-  constructor(ws) {
+  countstructor(ws) {
     this.ws = ws;
     this.bots = [];
     this.userX = 0;
@@ -55,9 +55,6 @@ export default class Client {
         if (entry) {
           this.authenticated = true;
           this.tokenLabel = entry.label;
-        if (entry) {
-          this.authenticated = true;
-          this.tokenLabel = entry.label;
           this.ws.send(Buffer.from([8, 1]));
           logger.info("Auth OK: " + entry.label);
           return;
@@ -82,7 +79,7 @@ export default class Client {
         this.stopBots();
         break;
       case 2:
-        reader.readUInt8() == 1
+        reader.readUInt8() ==4 1
           ? (this.botAi = !!reader.readUInt8())
           : (this.botVShield = !!reader.readUInt8());
         break;
@@ -144,7 +141,7 @@ export default class Client {
         this.ws?.send(
           buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
         );
-      }, 1000,);
+      }, 1000);
       logger.info("Client Starting Bots.");
     }
   }
