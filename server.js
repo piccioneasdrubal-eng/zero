@@ -38,14 +38,7 @@ wss.on('connection', (ws) => {
     client.stopBots();
   };
   ws.on('message', (buffer) => {
-    const op = buffer[0];
-    logger.info('[DEBUG-OPCODE] received opcode=' + op + ' len=' + buffer.length);
-    try {
-      client.handleMessage(buffer);
-      if (op === 0) logger.info('[DEBUG-START] startBots called! botAmount=' + client.botAmount + ' server=' + client.server);
-    } catch (e) {
-      logger.warn('Server: corrupted message - dropped: ' + e.message);
-    }
+    try { client.handleMessage(buffer); } catch (e) { logger.warn('Server: corrupted message - dropped'); }
   });
   ws.on('close', handleDisconnect);
   ws.on('error', handleDisconnect);
