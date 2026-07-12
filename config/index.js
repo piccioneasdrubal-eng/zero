@@ -10,7 +10,7 @@ export const config = {
         enableProxy: true
     },
     accessTokens: [
-        { token: "ZERO_THE_LEGEND_X_LIFR", label: "Admin", active: true },
+        { token: "ZERO_THE_LEGEND_X_LIFE", label: "Admin", active: true },
     ],
     facebookBotSettings: {
         skin: {
