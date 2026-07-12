@@ -43,12 +43,12 @@ server.on('request', async (req, res) => {
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: e.message || "Errore durante la registratone." }));
-      J
+      }
     });
     return;
   }
 
-  // API Login
+api_login:
   if (url === '/api/login' && method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -70,7 +70,7 @@ server.on('request', async (req, res) => {
     return;
   }
 
-  // API Stats (informazioni generali per il pannello)
+  // API Stats (informazioni generili per il pannello)
   if (url === '/api/stats' && method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
@@ -79,90 +79,5 @@ server.on('request', async (req, res) => {
       uptime: process.uptime()
     }));
   }
-
-  // Serve static frontend (index.html)
-  if (url === '/' || url === '/index.html') {
-    const indexPath = path.join(__dirname, 'public/index.html');
-    fs.readFile(indexPath, 'utf8', (err, content) => {
-      if (err) {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        return res.end("Errore interno del server (index.html non trovato)");
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(content);
-    });
-    return;
-  }
-
-  // Fallback 404
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end('404 Not Found');
-});
-
-manager.checkTokens((v) => { });
-
-wss.on('connection', (ws) => {
-  const client = new Client(ws);
-  logger.info('Client Connected');
-
-  const authTimeout = setTimeout(() => {
-    if (!client.authenticated) {
-      logger.warn('Client auth timeout (10s) \u2014 closing');
-      ws.close();
-    }
-  }, 10000);
-
-  const handleDisconnect = () => {
-    clearTimeout(authTimeout);
-    if (client.authenticated) {
-      logger.warn('Client Disconnected! (' + client.tokenLabel + ')');
-    } else {
-      logger.warn('Client Disconnected! (unauthenticated)');
-    }
-    client.stopBots();
-  };
-  ws.on('message', (buffer) => {
-    try { client.handleMessage(buffer); } catch (e) { logger.warn('Server: corrupted message - dropped'); }
-  });
-  ws.on('close', handleDisconnect);
-  ws.on('error', handleDisconnect);
-});
-
-const port = process.env.PORT || config.serverSettings.port;
-
-helper.proxies = [];
-
-server.listen(port, () => {
-  logger.info('Server started on port ' + port);
-  if (config.proxySettings.enableProxy) {
-    logger.info('Proxy enabled, bots direct during validation');
-    refreshProxies();
-    setInterval(refreshProxies, 60 * 60 * 1000);
-  } else {
-    logger.info('Proxy DISABLED: all bots connect direct');
-  }
-});
-
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { fetchProxies } from './scripts/fetchProxies.js';
-
-async function refreshProxies() {
-  try {
-    const count = await fetchProxies({ skipTest: true });
-    if (count > 0) {
-      const filePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config/proxies.txt');
-      const data = fs.readFileSync(filePath, 'utf-8');
-      const allProxies = data.split('\n').map(p => p.trim()).filter(p => p);
-      logger.info('Fetched ' + count + ' raw proxies, validating...');
-      const valid = await helper.validateProxies(allProxies);
-      helper.proxies = valid;
-      logger.info('Validated: ' + valid.length + ' working proxies ready!');
-    }
-  } catch (e) {
-    logger.warn('Proxy refresh failed: ' + e.message);
-  }
-}
-
+	J});
 export { manager };
