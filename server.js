@@ -23,7 +23,7 @@ manager.checkTokens((v) => {
   // TokenManager handles its own logging
 });
 
-wss.on("connection", (ws) => {
+wss.on("connect), (ws) => {
   const client = new Client(ws);
   logger.info("Client Connected");
   const handleDisconnect = () => {
@@ -65,6 +65,7 @@ fetchProxies({skipTest:true}).then(count => {
 // Aggiorna proxy ogni ora
 setInterval(() => {
   fetchProxies({skipTest:true}).then(count => {
+    if (count > 0) helper.setupProxies();
     logger.info(`Refreshed ${count} proxies`);
   }).catch(e => {
     logger.warn(`Proxy refresh failed: ${e.message}`);
