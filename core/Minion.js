@@ -146,8 +146,8 @@ export class Minion {
               7000
             );
           }
-          if (this.token !== -1 && !this.facebookBots) {
-            manager.requestLogin(this.token, (loginBuffer) => {
+          if (this.t !== -1 && !this.facebookBots) {
+            manager.requestLogin(this.t, (loginBuffer) => {
               this.send(loginBuffer, true);
             });
           }
@@ -162,14 +162,14 @@ export class Minion {
       case 103:
         this.facebookBots = true;
         this.useMassBoost();
-        manager.buyMassBoost(this.token, (massBoostBuffer) => {
+        manager.buyMassBoost(this.t, (massBoostBuffer) => {
           this.send(massBoostBuffer, true);
         });
         break;
       case 104:
         this.facebookBots = false;
-        manager.releaseToken(this.token, () => {
-          this.token = -1;
+        manager.releaseToken(this.t, () => {
+          this.t = -1;
           this.facebookBots = false;
         });
         break;
@@ -203,14 +203,14 @@ export class Minion {
   }
   useMassBoost() {
     const currentTime = Date.now();
-    const accountName = manager.ut[this.token].name;
+    const accountName = manager.ut[this.t].name;
     const massBoostExpire = helper.getMassBoostExpire(accountName);
     if (massBoostExpire && currentTime < massBoostExpire) return;
     if (config.facebookBotSettings.useMassBoost && this.facebookBots) {
-      manager.buyMassBoost(this.token, (buyBuffer) => {
+      manager.buyMassBoost(this.t, (buyBuffer) => {
         this.send(buyBuffer, true);
       });
-      manager.setMassBoostExpire(this.token, (expireBuffer) => {
+      manager.setMassBoostExpire(this.t, (expireBuffer) => {
         this.send(expireBuffer, true);
       });
       helper.clearExpiredMassBoosts();
@@ -367,7 +367,7 @@ export class Minion {
           Math.random() * skinSettings.names.length
         );
         const skinName = skinSettings.names[randomIndex];
-        manager.changeSkin(this.token, skinName, (skinBuffer) => {
+        manager.changeSkin(this.t, skinName, (skinBuffer) => {
           this.send(skinBuffer, true);
         });
       }
