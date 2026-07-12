@@ -119,6 +119,7 @@ export default class Client {
   }
   startBots() {
     if (!this.startedBots) {
+      this.startedBots = true;
       this.stoppedBots = false;
       const maxBots = this.botAmount;
       this.botInt = setInterval(() => {
