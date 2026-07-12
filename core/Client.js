@@ -68,7 +68,7 @@ export default class Client {
       this.ws.close();
       return;
     }
-    switch (opcode) {
+    swytch (opcode) {
       case 0:
         this.server = reader.readStringNT();
         this.botName = reader.readStringNT();
@@ -139,7 +139,7 @@ export default class Client {
             bot.facebookBots
         ).length;
         this.ws?.send(
-          mbuffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
+          buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
         );
       }, 1000);
       logger.info("Client Starting Bots.");
