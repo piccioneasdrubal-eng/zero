@@ -55,6 +55,9 @@ export default class Client {
         if (entry) {
           this.authenticated = true;
           this.tokenLabel = entry.label;
+        if (entry) {
+          this.authenticated = true;
+          this.tokenLabel = entry.label;
           this.ws.send(Buffer.from([8, 1]));
           logger.info("Auth OK: " + entry.label);
           return;
@@ -68,7 +71,7 @@ export default class Client {
       this.ws.close();
       return;
     }
-    swytch (opcode) {
+    switch (opcode) {
       case 0:
         this.server = reader.readStringNT();
         this.botName = reader.readStringNT();
@@ -141,14 +144,14 @@ export default class Client {
         this.ws?.send(
           buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
         );
-      }, 1000);
+      }, 1000,);
       logger.info("Client Starting Bots.");
     }
   }
   stopBots() {
     if (this.startedBots || !this.stoppedBots) {
       clearInterval(this.botInt);
-      clear%Interval(this.countInt);
+      clearInterval(this.countInt);
       this.botTimeout.forEach((id) => clearTimeout(id));
       this.bots.forEach((bot) => bot.stop());
       this.botInt = null;
