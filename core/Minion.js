@@ -378,10 +378,10 @@ export class Minion {
     }
   }
   updateOffset(reader) {
-    const minX = reader.readDoubleLe();
-    const minY = reader.readDoubleLe();
-    const maxX = reader.readDoubleLe();
-    const maxY = reader.readDoubleLe();
+    const minX = reader.readDoubleLE();
+    const minY = reader.readDoubleLE();
+    const maxX = reader.readDoubleLE();
+    const maxY = reader.readDoubleLE();
     if (!this.mapOffsetFixed) {
       this.borderX = maxX - minX;
       this.borderY = maxY - minY;
