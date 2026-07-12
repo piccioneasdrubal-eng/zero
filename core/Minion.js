@@ -135,7 +135,7 @@ export class Minion {
         this.myCellIds[cellId] = cellId;
         if (!this.isAlive) {
           this.isAlive = true;
-          this.moveInterval = setInterval(() => this.move(), 50);
+          this.moveInterval = setInterval(() => this.move(), 100);
           if (!this.client.startedBots && !this.client.stoppedBots) {
             this.client.startedBots = true;
             logger.info("Bots started.");
@@ -179,7 +179,7 @@ export class Minion {
         if (!this.client.server) break;
         this.decryptionKey = reader.readUInt32LE();
         const serverMatch = this.client.server.match(
-          /wss:\/\/(web-arenas-live-[\w-]+\.agario\.miniclippt\.com\/[\w-]+\/[\d-]+)/
+          /wss:\/\/((web-arenas-live-[\w-]+\.agario\.miniclippt\.com\/[\w-]+\/[\d-]+))/
         );
         if (serverMatch && serverMatch[1]) {
           this.encryptionKey = helper.murmur2(
@@ -378,10 +378,10 @@ export class Minion {
     }
   }
   updateOffset(reader) {
-    const minX = reader.readDoubleLE();
-    const minY = reader.readDoubleLE();
-    const maxX = reader.readDoubleLE();
-    const maxY = reader.readDoubleLE();
+    const minX = reader.readDoubleLe();
+    const minY = reader.readDoubleLe();
+    const maxX = reader.readDoubleLe();
+    const maxY = reader.readDoubleLe();
     if (!this.mapOffsetFixed) {
       this.borderX = maxX - minX;
       this.borderY = maxY - minY;
@@ -395,164 +395,106 @@ export class Minion {
       this.mapOffsetFixed = true;
     }
   }
-  checkEnemies(x, y, size) {
-    const enemies = [];
-    for (const cell of Object.values(this.playerCells)) {
-      if (cell.isFood) continue;
-      if (cell.isMine) continue;
-      if (cell.isVirus) continue;
-      if (cell.isFriend) continue;
-      if (helper.size2mass(size) > 2000) continue;
-      if (cell.name == this.client.playerName && this.client.isAlive) continue;
-      if (cell.name == unescape(encodeURIComponent(this.client.botName)))
-        continue;
-      const dx = cell.x - x;
-      const dy = cell.y - y;
-      const isBigger = cell.size > size * 0.85;
-      const distance = Math.hypot(dx, dy) - size - cell.size;
-      const isClose = distance < 150;
-      const sizeRatio = helper.size2mass(cell.size) / helper.size2mass(size);
-      if (isBigger && isClose) {
-        enemies.push({
-          dx: dx,
-          dy: dy,
-          distance: distance,
-          sizeRatio: sizeRatio,
-        });
-      }
-    }
-    return enemies;
-  }
-  nearestPlayer(x, y, size) {
-    const maxDistance = 2000;
-    const dxToMouse = this.client.userX / this.rX - x;
-    const dyToMouse = this.client.userY / this.rY - y;
-    const mouseDistance = 1 + Math.hypot(dxToMouse, dyToMouse);
-    let moveX = dxToMouse / mouseDistance;
-    let moveY = dyToMouse / mouseDistance;
-    const enemies = this.checkEnemies(x, y, size);
-    if (enemies.length === 0) {
-      return {
-        x: this.client.userX / this.rX + this.offsetX,
-        y: this.client.userY / this.rY + this.offsetY,
-      };
-    }
-    for (const { dx, dy, distance, sizeRatio } of enemies) {
-      const force = -10 * sizeRatio;
-      moveX += ((dx / distance) * force) / distance;
-      moveY += ((dy / distance) * force) / distance;
-    }
-    const totalForce = 1 + Math.hypot(moveX, moveY);
-    const targetX = x + (moveX / totalForce) * maxDistance;
-    const targetY = y + (moveY / totalForce) * maxDistance;
-    return { x: targetX, y: targetY };
-  }
-  nearestEntity(type, x, y, size) {
-    let nearest = null;
-    let minDistance = Infinity;
-    const enemies = type === "isFood" ? this.checkEnemies(x, y, size) : [];
-    for (const cell of Object.values(this.playerCells)) {
-      let isValid = false;
-      switch (type) {
-        case "isFood":
-          isValid =
-            !cell.isFriend && !cell.isVirus && cell.isFood && !cell.agitated;
-          break;
-        case "isVirus":
-          isValid =
-            !cell.isFriend && cell.isVirus && !cell.isFood && !cell.agitated;
-          break;
-      }
-      if (!isValid) continue;
-      const distance = helper.calculateDistance(x, y, cell.x, cell.y);
-      if (type === "isFood") {
-        let isDangerous = false;
-        for (const enemy of enemies) {
-          const enemyDistance = helper.calculateDistance(
-            enemy.dx + x,
-            enemy.dy + y,
-            cell.x,
-            cell.y
-          );
-          if (enemyDistance < 1000) {
-            isDangerous = true;
-            break;
-          }
-        }
-        if (isDangerous) continue;
-      }
-      if (distance < minDistance) {
-        nearest = cell;
-        minDistance = distance;
-      }
-    }
-    return { distance: minDistance, entity: nearest };
-  }
+  // OPTIMIZED: single pass over playerCells, 100ms interval
   move() {
-    const center = { x: 0, y: 0, size: 0 };
-    const cells = this.ownCells;
-    const cellCount = cells.length;
-    for (const { x, y, size } of cells) {
-      center.x += x;
-      center.y += y;
-      center.size += size;
-    }
-    center.x /= cellCount;
-    center.y /= cellCount;
-    const playerTarget = this.nearestPlayer(center.x, center.y, center.size);
-    const foodTarget = this.nearestEntity(
-      "isFood",
-      center.x,
-      center.y,
-      center.size
-    );
-    const virusTarget = this.nearestEntity(
-      "isVirus",
-      center.x,
-      center.y,
-      center.size
-    );
-    const mouseDistance = helper.calculateDistance(
-      center.x,
-      center.y,
-      this.client.userX / this.rX,
-      this.client.userY / this.rY
-    );
     if (!this.isAlive) return;
-    let targetX = playerTarget.x;
-    let targetY = playerTarget.y;
+    const cells = this.ownCells;
+    if (cells.length === 0) return;
+
+    // Compute center
+    let cx = 0, cy = 0, csize = 0;
+    for (const { x, y, size } of cells) {
+      cx += x; cy += y; csize += size;
+    }
+    cx /= cells.length;
+    cy /= cells.length;
+
+    const clientX = this.client.userX / this.rX;
+    const clientY = this.client.userY / this.rY;
+
+    // Update isNearMouse
     this.isNearMouse =
-      mouseDistance < 4000 + helper.size2mass(center.size) * 0.5;
-    if (!this.client.isAlive) {
-      targetX = playerTarget.x;
-      targetY = playerTarget.y;
-    }
-    if (this.followMouse) {
-      const useAI = this.client.botAi;
-      const useVShield = this.client.botVShield;
-      if (useAI && useVShield) {
-        if (virusTarget.entity) {
-          targetX = virusTarget.entity.x;
-          targetY = virusTarget.entity.y;
-        } else if (foodTarget.entity) {
-          targetX = foodTarget.entity.x;
-          targetY = foodTarget.entity.y;
+      Math.hypot(clientX - cx, clientY - cy) < 4000 + helper.size2mass(csize) * 0.5;
+
+    // Default target: follow mouse
+    let targetX = clientX + this.offsetX;
+    let targetY = clientY + this.offsetY;
+
+    const useAI = this.client.botAi;
+    const useVShield = this.client.botVShield;
+    const cMass = helper.size2mass(csize);
+    const massOver2000 = cMass > 2000;
+    const botNameEncoded = unescape(encodeURIComponent(this.client.botName));
+    const playerName = this.client.playerName;
+    const playerAlive = this.client.isAlive;
+
+    // Single pass: find enemies, nearest food, nearest virus
+    let nearestFood = null, minFoodDist = Infinity;
+    let nearestVirus = null, minVirusDist = Infinity;
+    const enemies = [];
+
+    for (const cell of Object.values(this.playerCells)) {
+      if (cell.isMine) continue;
+
+      if (cell.isFood && !cell.isFriend && !cell.isVirus && !cell.agitated) {
+        if (useAI || !this.followMouse) {
+          const d = helper.calculateDistance(cx, cy, cell.x, cell.y);
+          if (d < minFoodDist) { nearestFood = cell; minFoodDist = d; }
         }
-      } else if (!useAI && useVShield) {
-        if (virusTarget.entity && virusTarget.distance < 10000) {
-          targetX = virusTarget.entity.x;
-          targetY = virusTarget.entity.y;
-        }
-      } else if (useAI && !useVShield) {
-        if (foodTarget.entity) {
-          targetX = foodTarget.entity.x;
-          targetY = foodTarget.entity.y;
-        }
+        continue;
       }
-    } else if (foodTarget.entity) {
-      targetX = foodTarget.entity.x;
-      targetY = foodTarget.entity.y;
+
+      if (cell.isVirus && !cell.isFriend && !cell.isFood && !cell.agitated) {
+        if (useVShield) {
+          const d = helper.calculateDistance(cx, cy, cell.x, cell.y);
+          if (d < minVirusDist) { nearestVirus = cell; minVirusDist = d; }
+        }
+        continue;
+      }
+
+      // Enemy check
+      if (cell.isFood || cell.isFriend || cell.isVirus) continue;
+      if (massOver2000) continue;
+      if (cell.name === playerName && playerAlive) continue;
+      if (cell.name === botNameEncoded) continue;
+      if (cell.size <= csize * 0.85) continue;
+
+      const dx = cell.x - cx, dy = cell.y - cy;
+      const distance = Math.hypot(dx, dy) - csize - cell.size;
+      if (distance < 150) {
+        enemies.push({ dx, dy, distance, sizeRatio: helper.size2mass(cell.size) / cMass });
+      }
     }
+
+    // Choose target
+    if (enemies.length > 0) {
+      // Flee from enemies
+      const dxM = clientX - cx, dyM = clientY - cy;
+      const md = 1 + Math.hypot(dxM, dyM);
+      let moveX = dxM / md, moveY = dyM / md;
+      for (const { dx, dy, distance, sizeRatio } of enemies) {
+        const force = -10 * sizeRatio;
+        moveX += ((dx / distance) * force) / distance;
+        moveY += ((dy / distance) * force) / distance;
+      }
+      const totalForce = 1 + Math.hypot(moveX, moveY);
+      targetX = cx + (moveX / totalForce) * 2000;
+      targetY = cy + (moveY / totalForce) * 2000;
+    } else if (this.followMouse) {
+      if (useAI && useVShield) {
+        if (nearestVirus) { targetX = nearestVirus.x; targetY = nearestVirus.y; }
+        else if (nearestFood) { targetX = nearestFood.x; targetY = nearestFood.y; }
+      } else if (!useAI && useVShield) {
+        if (nearestVirus && minVirusDist < 10000) { targetX = nearestVirus.x; targetY = nearestVirus.y; }
+      } else if (useAI && !useVShield) {
+        if (nearestFood) { targetX = nearestFood.x; targetY = nearestFood.y; }
+      }
+      // else: follow mouse (default already set)
+    } else {
+      // !followMouse (first 7s): go to food or mouse
+      if (nearestFood) { targetX = nearestFood.x; targetY = nearestFood.y; }
+    }
+
     this.send(buffers.moveTo(targetX, targetY, this.decryptionKey), true);
   }
   clearIntervals() {
