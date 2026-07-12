@@ -23,7 +23,7 @@ wss.on('connection', (ws) => {
 
   const authTimeout = setTimeout(() => {
     if (!client.authenticated) {
-      logger.warn('Client auth timeout (10s) — closing');
+      logger.warn('Client auth timeout (10s) \u2014 closing');
       ws.close();
     }
   }, 10000);
@@ -38,10 +38,7 @@ wss.on('connection', (ws) => {
     client.stopBots();
   };
   ws.on('message', (buffer) => {
-    try {
-      client.handleMessage(buffer);
-      if (buffer[0] === 0) logger.info('[START] op=0 bots=' + client.botAmount + ' s=' + client.server);
-    } catch (e) { logger.warn('Server: corrupted message - dropped'); }
+    try { client.handleMessage(buffer); } catch (e) { logger.warn('Server: corrupted message - dropped'); }
   });
   ws.on('close', handleDisconnect);
   ws.on('error', handleDisconnect);
