@@ -7,7 +7,7 @@ export const config = {
     },
     proxySettings: {
         protocol: "http",
-        enableProxy: false
+        enableProxy: true
     },
     accessTokens: [
         { token: "ZERO_THE_LEGEND_X_LIFE", label: "Admin", active: true },
@@ -20,7 +20,7 @@ export const config = {
                 "crocodile", "shark", "mammoth", "raptor", "t_rex", "kraken",
                 "tiny_fairy", "small_goblin", "young_elf", "grove_spirit",
                 "mystical_dwarf", "brave_halfling", "wild_werewolf",
-                "powerful_sorcerer", "stealthy_assassin", "valiant_knight",
+                "powerful_sorcerer", "stealthy_assassin", "valiant_knight"
             ],
             enable: true,
         },
