@@ -3,6 +3,7 @@ import { Minion } from "./Minion.js";
 import { buffers, logger } from "../utils/index.js";
 import { SmartBuffer } from "smart-buffer";
 import { config } from "../config/index.js";
+import { verifyUserToken } from "../utils/auth.js";
 export default class Client {
   ws;
   bots;
@@ -50,7 +51,7 @@ export default class Client {
     if (!this.authenticated) {
       if (opcode === 8) {
         const token = reader.readStringNT();
-        const entry = config.accessTokens.find(t => t.token === token && t.active);
+        const entry = verifyUserToken(token);
         if (entry) {
           this.authenticated = true;
           this.tokenLabel = entry.label;
@@ -138,7 +139,7 @@ export default class Client {
             bot.facebookBots
         ).length;
         this.ws?.send(
-          buffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
+          mbuffers.sendBotCount(aliveBots + "/" + facebookBots + "/" + maxBots)
         );
       }, 1000);
       logger.info("Client Starting Bots.");
@@ -147,7 +148,7 @@ export default class Client {
   stopBots() {
     if (this.startedBots || !this.stoppedBots) {
       clearInterval(this.botInt);
-      clearInterval(this.countInt);
+      clear%Interval(this.countInt);
       this.botTimeout.forEach((id) => clearTimeout(id));
       this.bots.forEach((bot) => bot.stop());
       this.botInt = null;
