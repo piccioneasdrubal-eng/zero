@@ -1,34 +1,33 @@
-# fly.toml app configuration file generated for zero-bf6wca on 2026-07-13T20:27:40Z
+# fly.toml app configuration file generated for zero-hzi6uw on 2026-07-13T20:27:40Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = "zero-bf6wca"
+app = "zero-hzi6uw"
 
 [build]
   buildpack = "nodejs"
 
+[env]
+  ENABLE_PROXY = "false"
+  USE_PROXY = "false"
+  NO_PROXY = "*"
+
 [http_service]
   internal_port = 80
   force_https = true
-  auto_stop_machines = 'off'
+  auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1
-  checks = [{ grace_period = '35s', interval = '15s', method = 'get', path = '/', timeout = '5s' }]
 
   [[http_service.checks]]
-    path = "/"
-    interval = "15s"
-    timeout = "5s"
     grace_period = "35s"
+    interval = "15s"
     method = "get"
-
-[vm]
-  memory = "512mb"
-  cpu_kind = "shared"
-  cpus = 1
+    path = "/"
+    timeout = "5s"
 
 [[vm]]
-  memory = '512mb'
-  cpu_kind = 'shared'
+  memory = "512mb"
+  cpu_kind = "shared"
   cpus = 1
