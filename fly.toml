@@ -28,6 +28,6 @@ primary_region = "iad"
     timeout = "5s"
 
 [[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
+  memory = "1gb"
+  cpu_kind = "performance"
   cpus = 1
