@@ -10,9 +10,8 @@ primary_region = "iad"
   buildpack = "nodejs"
 
 [env]
-  ENABLE_PROXY = "false"
-  NO_PROXY = "*"
-  USE_PROXY = "false"
+  ENABLE_PROXY = "true"
+  USE_PROXY = "true"
 
 [http_service]
   internal_port = 80
