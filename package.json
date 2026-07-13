@@ -18,5 +18,8 @@
     "p-queue": "^8.1.0",
     "smart-buffer": "^4.2.0",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10"
   }
 }
