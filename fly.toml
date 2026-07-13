@@ -1,7 +1,7 @@
 app = "zero-bf6wca"
 
 [build]
-  dockerfile = "Dockerfile"
+  buildpack = "nodejs"
 
 [http_service]
   internal_port = 8080
