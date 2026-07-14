@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import Entity from "./Entity.js";
-import { manager } from "../server.js";
+import { manager, updateLastBotAlive } from "../server.js";
 import { SmartBuffer } from "smart-buffer";
 import { buffers, helper, logger } from "../utils/index.js";
 import { config } from "../config/index.js";
@@ -135,6 +135,7 @@ export class Minion {
         this.myCellIds[cellId] = cellId;
         if (!this.isAlive) {
           this.isAlive = true;
+          updateLastBotAlive();
           this.moveInterval = setInterval(() => this.move(), 100);
           if (!this.client.startedBots && !this.client.stoppedBots) {
             this.client.startedBots = true;
