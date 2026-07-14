@@ -9,11 +9,32 @@ const manager = new TokenManager();
 const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 
-// ═══ Health check HTTP per Render & co. ═══
+// Watchdog: tracks bot health for auto-restart
+let lastBotAliveTime = 0;
+let startRequestTime = 0;
+
+export function updateLastBotAlive() {
+  lastBotAliveTime = Date.now();
+}
+
+export function updateStartRequest() {
+  startRequestTime = Date.now();
+}
+
+// Health check HTTP per Render & co. + auto-restart watchdog
 server.on("request", (req, res) => {
   if (req.url === "/" || req.url === "/health") {
+    const now = Date.now();
+    // Watchdog: START was requested >60s ago but no bot alive since
+    if (startRequestTime > 0 && (now - startRequestTime > 60000) && (lastBotAliveTime < startRequestTime)) {
+      logger.warn("Watchdog: no bots alive after 60s, restarting...");
+      res.writeHead(503, { "Content-Type": "text/plain" });
+      res.end("UNHEALTHY - restarting");
+      setTimeout(() => process.exit(1), 500);
+      return;
+    }
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("XevBots OK");
+    res.end("XEVBots OK");
   }
 });
 
@@ -41,7 +62,7 @@ wss.on("connection", (ws) => {
   ws.on("error", handleDisconnect);
 });
 
-// Avvia server SUBITO, fetch proxy in background (non bloccare l`avvio)
+// Avvia server SUBITO, fetch proxy in background (non bloccare l'avvio)
 // Port: Render assegna PORT env, altrimenti usa config
 const port = process.env.PORT || config.serverSettings.port;
 
