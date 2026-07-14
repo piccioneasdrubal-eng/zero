@@ -4,6 +4,7 @@ import { buffers, logger } from "../utils/index.js";
 import { SmartBuffer } from "smart-buffer";
 import { config } from "../config/index.js";
 import { verifyUserToken } from "../utils/auth.js";
+import { updateStartRequest } from "../server.js";
 export default class Client {
   ws;
   bots;
@@ -121,6 +122,7 @@ export default class Client {
   startBots() {
     if (!this.startedBots) {
       this.stoppedBots = false;
+      updateStartRequest();
       const maxBots = this.botAmount;
       this.botInt = setInterval(() => {
         if (this.connectedBots < maxBots && this.bots.length < maxBots) {
