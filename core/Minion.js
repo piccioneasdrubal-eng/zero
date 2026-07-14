@@ -33,6 +33,7 @@ export class Minion {
   myCellIds;
   followMouseTimeout;
   spawnTimeout;
+  spawnInterval;
 
   constructor(client) {
     this.ws = null;
@@ -56,6 +57,7 @@ export class Minion {
     this.followMouse = false;
     this.errorTimeout = null;
     this.spawnTimeout = null;
+    this.spawnInterval = null;
     this.isConnected = false;
     this.isNearMouse = false;
     this.facebookBots = false;
@@ -372,10 +374,16 @@ export class Minion {
           this.send(skinBuffer, true);
         });
       }
-      this.spawnTimeout = setTimeout(
-        () => this.send(buffers.spawn(this.client.botName), true),
-        0
-      ); // 1000
+      // Aggressive spawn retry: keep trying every 50ms until alive
+      if (this.spawnInterval) clearInterval(this.spawnInterval);
+      this.spawnInterval = setInterval(() => {
+        if (this.isAlive) {
+          clearInterval(this.spawnInterval);
+          this.spawnInterval = null;
+          return;
+        }
+        this.send(buffers.spawn(this.client.botName), true);
+      }, 50);
     }
   }
   updateOffset(reader) {
@@ -502,6 +510,10 @@ export class Minion {
     if (this.moveInterval) {
       clearInterval(this.moveInterval);
       this.moveInterval = null;
+    }
+    if (this.spawnInterval) {
+      clearInterval(this.spawnInterval);
+      this.spawnInterval = null;
     }
   }
   clearTimeouts() {
