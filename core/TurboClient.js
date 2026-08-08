@@ -2,6 +2,7 @@ import { WebSocket } from "ws";
 import { TurboMinion } from "./TurboMinion.js";
 import { buffers, logger } from "../utils/index.js";
 import { SmartBuffer } from "smart-buffer";
+import { config } from "../config/index.js";
 import { verifyUserToken } from "../utils/auth.js";
 import { updateStartRequest } from "../server.js";
 
@@ -39,6 +40,7 @@ export default class TurboClient {
     if (!this.authenticated) {
       if (opcode === 8) {
         const token = reader.readStringNT();
+        logger.info("Turbo: received token [" + token + "] len=" + token.length);
         const entry = verifyUserToken(token);
         if (entry) {
           this.authenticated = true;
@@ -47,12 +49,12 @@ export default class TurboClient {
           logger.info("Turbo Auth OK: " + entry.label);
           return;
         }
-        logger.warn("Turbo Auth FAILED");
+        logger.warn("Turbo Auth FAILED: token='" + token + "'");
         this.ws.send(Buffer.from([8, 0]));
         this.ws.close();
         return;
       }
-      logger.warn("Turbo: Rejected opcode " + opcode);
+      logger.warn("Turbo: Rejected opcode " + opcode + " (not auth)");
       this.ws.close();
       return;
     }
