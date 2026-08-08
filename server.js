@@ -1,5 +1,5 @@
 import { config } from "./config/index.js";
-import Client from "./core/Client.js";
+import TurboClient from "./core/TurboClient.js";
 import { helper, logger } from "./utils/index.js";
 import { WebSocketServer } from "ws";
 import TokenManager from "./core/TokenManager.js";
@@ -9,23 +9,15 @@ const manager = new TokenManager();
 const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 
-// Watchdog: tracks bot health for auto-restart
 let lastBotAliveTime = 0;
 let startRequestTime = 0;
 
-export function updateLastBotAlive() {
-  lastBotAliveTime = Date.now();
-}
+export function updateLastBotAlive() { lastBotAliveTime = Date.now(); }
+export function updateStartRequest() { startRequestTime = Date.now(); }
 
-export function updateStartRequest() {
-  startRequestTime = Date.now();
-}
-
-// Health check HTTP per Render & co. + auto-restart watchdog
 server.on("request", (req, res) => {
   if (req.url === "/" || req.url === "/health") {
     const now = Date.now();
-    // Watchdog: START was requested >60s ago but no bot alive since
     if (startRequestTime > 0 && (now - startRequestTime > 60000) && (lastBotAliveTime < startRequestTime)) {
       logger.warn("Watchdog: no bots alive after 60s, restarting...");
       res.writeHead(503, { "Content-Type": "text/plain" });
@@ -34,59 +26,51 @@ server.on("request", (req, res) => {
       return;
     }
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("XEVBots OK");
+    res.end("XEVBots Turbo OK");
   }
 });
 
 let serverListening = false;
 
-manager.checkTokens((v) => {
-  // TokenManager handles its own logging
-});
+manager.checkTokens((v) => {});
 
 wss.on("connection", (ws) => {
-  const client = new Client(ws);
-  logger.info("Client Connected");
+  const client = new TurboClient(ws);
+  logger.info("Turbo Client Connected");
   const handleDisconnect = () => {
-    client.stopBots();
-    logger.warn("Client Disconnected!");
+    client.stopAll();
+    logger.warn("Turbo Client Disconnected!");
   };
   ws.on("message", (buffer) => {
     try {
       client.handleMessage(buffer);
     } catch (e) {
-      logger.warn("Server: corrupted message — dropped");
+      logger.warn("Turbo Server: corrupted message — dropped");
     }
   });
   ws.on("close", handleDisconnect);
   ws.on("error", handleDisconnect);
 });
 
-// Avvia server SUBITO, fetch proxy in background (non bloccare l'avvio)
-// Port: Render assegna PORT env, altrimenti usa config
 const port = process.env.PORT || config.serverSettings.port;
 
-// 1. Carica proxy esistenti subito
 helper.setupProxies();
 
-// 2. Avvia server immediatamente (non aspettare fetchProxies)
 server.listen(port, () => {
   serverListening = true;
-  logger.info(`Server started on port ${port} with ${helper.proxies.length} proxies`);
+  logger.info(`Turbo Server started on port ${port} with ${helper.proxies.length} proxies`);
 });
 
-// 3. Refresh proxy in background (skip test, usa pre-validati)
 fetchProxies({skipTest:true}).then(count => {
-  if (count > 0) helper.setupProxies(); // ricarica con i nuovi
+  if (count > 0) helper.setupProxies();
   logger.info(`Fetched ${count} fresh proxies`);
 }).catch(e => {
   logger.warn(`Proxy fetch failed: ${e.message}`);
 });
 
-// Aggiorna proxy ogni ora
 setInterval(() => {
   fetchProxies({skipTest:true}).then(count => {
-    if (count > 0) helper.setupProxies(); // ricarica in memoria!
+    if (count > 0) helper.setupProxies();
     logger.info(`Refreshed ${count} proxies`);
   }).catch(e => {
     logger.warn(`Proxy refresh failed: ${e.message}`);
