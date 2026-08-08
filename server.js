@@ -1,3 +1,4 @@
+// ═══ server.js — Turbo Engine v7 ═══
 import { config } from "./config/index.js";
 import TurboClient from "./core/TurboClient.js";
 import { helper, logger } from "./utils/index.js";
@@ -19,9 +20,8 @@ server.on("request", (req, res) => {
   if (req.url === "/" || req.url === "/health") {
     const now = Date.now();
     if (startRequestTime > 0 && (now - startRequestTime > 60000) && (lastBotAliveTime < startRequestTime)) {
-      logger.warn("Watchdog: no bots alive after 60s, restarting...");
-      res.writeHead(503, { "Content-Type": "text/plain" });
-      res.end("UNHEALTHY - restarting");
+      logger.warn("Watchdog: restarting...");
+      res.writeHead(503); res.end("UNHEALTHY");
       setTimeout(() => process.exit(1), 500);
       return;
     }
@@ -30,51 +30,34 @@ server.on("request", (req, res) => {
   }
 });
 
-let serverListening = false;
-
 manager.checkTokens((v) => {});
 
 wss.on("connection", (ws) => {
   const client = new TurboClient(ws);
   logger.info("Turbo Client Connected");
-  const handleDisconnect = () => {
-    client.stopAll();
-    logger.warn("Turbo Client Disconnected!");
-  };
   ws.on("message", (buffer) => {
-    try {
-      client.handleMessage(buffer);
-    } catch (e) {
-      logger.warn("Turbo Server: corrupted message — dropped");
-    }
+    try { client.handleMessage(buffer); }
+    catch (e) { logger.warn("Turbo: bad msg"); }
   });
-  ws.on("close", handleDisconnect);
-  ws.on("error", handleDisconnect);
+  ws.on("close", () => { client.stopAll(); logger.warn("Turbo Client Disconnected"); });
+  ws.on("error", () => { client.stopAll(); });
 });
 
 const port = process.env.PORT || config.serverSettings.port;
-
 helper.setupProxies();
 
 server.listen(port, () => {
-  serverListening = true;
-  logger.info(`Turbo Server started on port ${port} with ${helper.proxies.length} proxies`);
+  logger.info(`Turbo Server on ${port} with ${helper.proxies.length} proxies`);
 });
 
 fetchProxies({skipTest:true}).then(count => {
   if (count > 0) helper.setupProxies();
-  logger.info(`Fetched ${count} fresh proxies`);
-}).catch(e => {
-  logger.warn(`Proxy fetch failed: ${e.message}`);
-});
+}).catch(e => {});
 
 setInterval(() => {
   fetchProxies({skipTest:true}).then(count => {
     if (count > 0) helper.setupProxies();
-    logger.info(`Refreshed ${count} proxies`);
-  }).catch(e => {
-    logger.warn(`Proxy refresh failed: ${e.message}`);
-  });
+  }).catch(e => {});
 }, 60 * 60 * 1000);
 
 export { manager };
