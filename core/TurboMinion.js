@@ -18,13 +18,13 @@ export class TurboMinion {
     this.isConnected = false; this.isNearMouse = false;
     this.facebookBots = false; this.mapOffsetFixed = false;
     this.followMouseTimeout = null;
+    this._upCount = 0; this._nodeSum = 0; this._trunc = 0;
     this.proxyAgent = null;
     this.connect();
   }
 
   connect() {
     const url = this.client.getServer(this.team);
-    logger.info(`[LOG t${this.team}] connecting to ${(url||'').substring(0,60)}...`);
     this.ws = new WebSocket(url, {
       headers: helper.generateHeaders(), rejectUnauthorized: false
     });
@@ -42,13 +42,9 @@ export class TurboMinion {
     if (this.ws.readyState === 1) this.ws.send(buffer);
   }
 
-  onopen() {
-    logger.info(`[LOG t${this.team}] WS OPEN`);
-    this.send(buffers.protocolVersion()); this.send(buffers.protocolKey());
-  }
+  onopen() { this.send(buffers.protocolVersion()); this.send(buffers.protocolKey()); }
 
   onclose() {
-    logger.warn(`[LOG t${this.team}] WS CLOSED`);
     this.isClosed = true;
     if (this.team === 0) this.client.connectedBotsA--;
     else this.client.connectedBotsB--;
@@ -57,7 +53,6 @@ export class TurboMinion {
   }
 
   onerror() {
-    logger.warn(`[LOG t${this.team}] WS ERROR`);
     this.isClosed = true;
     this.clearTimeouts(); this.clearIntervals();
     this.facebookBots = false;
@@ -86,10 +81,9 @@ export class TurboMinion {
         const id = r.readUInt32LE(); this.myCellIds[id] = id;
         if (!this.isAlive) {
           this.isAlive = true; updateLastBotAlive();
-          logger.info(`[LOG t${this.team}] SPAWNED id=${id}`);
           this.moveInterval = setInterval(() => this.move(), 100);
           if (!this.client.startedBots && !this.client.stoppedBots)
-            { this.client.startedBots = true; logger.info("Bots started."); }
+            { this.client.startedBots = true; }
           if (!this.followMouseTimeout && !this.followMouse)
             this.followMouseTimeout = setTimeout(() => (this.followMouse = true), 7000);
           if (this.t !== -1 && !this.facebookBots)
@@ -161,26 +155,28 @@ export class TurboMinion {
     [this.rX, this.rY] = qm[this.client.rQuadrant - 1][q - 1];
   }
 
+  _upCount = 0; _nodeSum = 0; _trunc = 0;
   updateNodes(r) {
     try {
     const rc = r.readUInt16LE();
     for (let i = 0; i < rc; i++) {
-      if (r.remaining() < 4) break;
+      if (r.remaining() < 4) { this._trunc++; break; }
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
+    let totalNodes = 0;
     while (true) {
-      if (r.remaining() < 4) break;
+      if (r.remaining() < 4) { this._trunc++; break; }
       const id = r.readUInt32LE(); if (id === 0) break;
       const x = r.readInt32LE(), y = r.readInt32LE(), s = r.readUInt16LE(), f = r.readUInt8();
       const iv = !!(f & 1); let sn = null, c = null, nm = null, ef = 0;
-      if (f & 128) { if (r.remaining() < 1) break; ef = r.readUInt8(); }
-      if (f & 2) { if (r.remaining() < 3) break; c = helper.intToHex((r.readUInt8()<<16)|(r.readUInt8()<<8)|r.readUInt8()); }
+      if (f & 128) { if (r.remaining() < 1) { this._trunc++; break; } ef = r.readUInt8(); }
+      if (f & 2) { if (r.remaining() < 3) { this._trunc++; break; } c = helper.intToHex((r.readUInt8()<<16)|(r.readUInt8()<<8)|r.readUInt8()); }
       if (f & 4) { nm = r.readStringNT("utf8"); }
       if (f & 8) { sn = r.readStringNT("utf8"); }
       const ia = !!(f & 16), iFd = !!(ef & 1), iFr = !!(ef & 2);
       let aid = 0;
-      if (ef & 4) { if (r.remaining() < 4) break; r.readOffset += 4; aid = r.readUInt32LE(r.readOffset - 4); }
+      if (ef & 4) { if (r.remaining() < 4) { this._trunc++; break; } r.readOffset += 4; aid = r.readUInt32LE(r.readOffset - 4); }
       let cl = this.playerCells[id];
       if (!cl) { cl = new Entity(id, aid); this.playerCells[id] = cl; }
       if (c !== null) cl.color = c;
@@ -191,15 +187,19 @@ export class TurboMinion {
       cl.x = x; cl.y = y; cl.size = s;
       cl.isFood = iFd; cl.isVirus = iv;
       cl.agitated = ia; cl.isFriend = iFr; cl.accountID = aid;
+      totalNodes++;
     }
     if (r.remaining() >= 2) {
       const ec = r.readUInt16LE();
       for (let i = 0; i < ec; i++) {
-        if (r.remaining() < 4) break;
+        if (r.remaining() < 4) { this._trunc++; break; }
         const id = r.readUInt32LE();
         if (this.playerCells[id]) this.playerCells[id].destroy(this);
       }
     }
+    this._upCount++; this._nodeSum += totalNodes;
+    if (this._upCount % 20 === 0)
+      logger.info(`[UP t${this.team}] #${this._upCount}: nodes=${totalNodes} sum=${this._nodeSum} own=${this.ownCells.length} trunc=${this._trunc} alive=${this.isAlive}`);
     if (this.isAlive && this.ownCells.length === 0) {
       if (this.moveInterval) { clearInterval(this.moveInterval); this.moveInterval = null; }
       if (!this.facebookBots && this.followMouseTimeout) {
@@ -231,9 +231,10 @@ export class TurboMinion {
     }
   }
 
+  _moveLog = 0;
   move() {
-    if (!this.isAlive) return;
-    const cs = this.ownCells; if (cs.length === 0) return;
+    if (!this.isAlive) { if (++this._moveLog <= 2) logger.warn(`[MV t${this.team}] notAlive`); return; }
+    const cs = this.ownCells; if (cs.length === 0) { if (++this._moveLog <= 5) logger.warn(`[MV t${this.team}] ownCells=0 up=${this._upCount}`); return; }
     let cx = 0, cy = 0, cz = 0;
     for (const { x, y, size } of cs) { cx += x; cy += y; cz += size; }
     cx /= cs.length; cy /= cs.length;
@@ -297,6 +298,7 @@ export class TurboMinion {
     } else {
       if (nF) { gX = nF.x; gY = nF.y; }
     }
+    if (++this._moveLog <= 3) logger.info(`[MV t${this.team}] →(${gX|0},${gY|0}) u=(${this.client.userX},${this.client.userY})`);
     this.send(buffers.moveTo(gX, gY, this.decryptionKey), true);
   }
 
