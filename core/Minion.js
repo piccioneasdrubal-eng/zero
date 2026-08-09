@@ -114,94 +114,104 @@ export class Minion {
     }, 1000);
   }
   onmessage({ data: buffer }) {
-    let processedBuffer = buffer;
-    if (this.decryptionKey) {
-      processedBuffer = helper.xorBuffer(
-        processedBuffer,
-        this.decryptionKey ^ 31128
-      );
+    try {
+      let processedBuffer = buffer;
+      if (this.decryptionKey) {
+        processedBuffer = helper.xorBuffer(
+          processedBuffer,
+          this.decryptionKey ^ 31128
+        );
+      }
+      this.handleBuffer(processedBuffer);
+    } catch (e) {
+      logger.warn(`[Minion] Pacchetto corrotto dal proxy: ${e.message}`);
     }
-    this.handleBuffer(processedBuffer);
   }
   handleBuffer(buffer) {
-    const reader = SmartBuffer.fromBuffer(buffer);
-    const messageType = reader.readUInt8();
-    switch (messageType) {
-      case 18:
-        this.myCellIds = {};
-        this.ownCells = [];
-        this.playerCells = [];
-        break;
-      case 32:
-        const cellId = reader.readUInt32LE();
-        this.myCellIds[cellId] = cellId;
-        if (!this.isAlive) {
-          this.isAlive = true;
-          updateLastBotAlive();
-          this.moveInterval = setInterval(() => this.move(), 100);
-          if (!this.client.startedBots && !this.client.stoppedBots) {
-            this.client.startedBots = true;
-            logger.info("Bots started.");
+    try {
+      if (!buffer || buffer.length === 0) return;
+      const reader = SmartBuffer.fromBuffer(buffer);
+      if (reader.remaining() < 1) return;
+      const messageType = reader.readUInt8();
+      switch (messageType) {
+        case 18:
+          this.myCellIds = {};
+          this.ownCells = [];
+          this.playerCells = [];
+          break;
+        case 32:
+          const cellId = reader.readUInt32LE();
+          this.myCellIds[cellId] = cellId;
+          if (!this.isAlive) {
+            this.isAlive = true;
+            updateLastBotAlive();
+            this.moveInterval = setInterval(() => this.move(), 100);
+            if (!this.client.startedBots && !this.client.stoppedBots) {
+              this.client.startedBots = true;
+              logger.info("Bots started.");
+            }
+            if (!this.followMouseTimeout && !this.followMouse) {
+              this.followMouseTimeout = setTimeout(
+                () => (this.followMouse = true),
+                7000
+              );
+            }
+            if (this.t !== -1 && !this.facebookBots) {
+              manager.requestLogin(this.t, (loginBuffer) => {
+                this.send(loginBuffer, true);
+              });
+            }
           }
-          if (!this.followMouseTimeout && !this.followMouse) {
-            this.followMouseTimeout = setTimeout(
-              () => (this.followMouse = true),
-              7000
+          break;
+        case 69:
+          this.ghostCells(reader);
+          break;
+        case 85:
+          logger.info("Mass boost activated");
+          break;
+        case 103:
+          this.facebookBots = true;
+          this.useMassBoost();
+          manager.buyMassBoost(this.t, (massBoostBuffer) => {
+            this.send(massBoostBuffer, true);
+          });
+          break;
+        case 104:
+          this.facebookBots = false;
+          manager.releaseToken(this.t, () => {
+            this.t = -1;
+            this.facebookBots = false;
+          });
+          break;
+        case 241:
+          this.isConnected = true;
+          this.client.connectedBots++;
+          if (!this.client.server) break;
+          this.decryptionKey = reader.readUInt32LE();
+          const serverMatch = this.client.server.match(
+            /wss:\/\/((web-arenas-live-[\w-]+\.agario\.miniclippt\.com\/[\w-]+\/[\d-]+))/
+          );
+          if (serverMatch && serverMatch[1]) {
+            this.encryptionKey = helper.murmur2(
+              "" + serverMatch[1] + reader.readStringNT("utf-8"),
+              255
             );
           }
-          if (this.t !== -1 && !this.facebookBots) {
-            manager.requestLogin(this.t, (loginBuffer) => {
-              this.send(loginBuffer, true);
-            });
-          }
-        }
-        break;
-      case 69:
-        this.ghostCells(reader);
-        break;
-      case 85:
-        logger.info("Mass boost activated");
-        break;
-      case 103:
-        this.facebookBots = true;
-        this.useMassBoost();
-        manager.buyMassBoost(this.t, (massBoostBuffer) => {
-          this.send(massBoostBuffer, true);
-        });
-        break;
-      case 104:
-        this.facebookBots = false;
-        manager.releaseToken(this.t, () => {
-          this.t = -1;
-          this.facebookBots = false;
-        });
-        break;
-      case 241:
-        this.isConnected = true;
-        this.client.connectedBots++;
-        if (!this.client.server) break;
-        this.decryptionKey = reader.readUInt32LE();
-        const serverMatch = this.client.server.match(
-          /wss:\/\/((web-arenas-live-[\w-]+\.agario\.miniclippt\.com\/[\w-]+\/[\d-]+))/
-        );
-        if (serverMatch && serverMatch[1]) {
-          this.encryptionKey = helper.murmur2(
-            "" + serverMatch[1] + reader.readStringNT("utf-8"),
-            255
+          break;
+        case 242:
+          this.send(buffers.spawn(this.client.botName), true);
+          break;
+        case 255:
+          this.handleMessage(
+            helper.uncompressBuffer(
+              reader.toBuffer().subarray(5),
+              Buffer.alloc(reader.readUInt32LE())
+            )
           );
-        }
-        break;
-      case 242:
-        this.send(buffers.spawn(this.client.botName), true);
-        break;
-      case 255:
-        this.handleMessage(
-          helper.uncompressBuffer(
-            reader.toBuffer().subarray(5),
-            Buffer.alloc(reader.readUInt32LE())
-          )
-        );
-        break;
+          break;
+      }
+    } catch (e) {
+      logger.warn(`[Minion] handleBuffer error: ${e.message}`);
     }
   }
   useMassBoost() {
@@ -222,15 +232,21 @@ export class Minion {
     }
   }
   handleMessage(buffer) {
-    const reader = SmartBuffer.fromBuffer(buffer);
-    const messageType = reader.readUInt8();
-    switch (messageType) {
-      case 16:
-        this.updateNodes(reader);
-        break;
-      case 64:
-        this.updateOffset(reader);
-        break;
+    try {
+      if (!buffer || buffer.length === 0) return;
+      const reader = SmartBuffer.fromBuffer(buffer);
+      if (reader.remaining() < 1) return;
+      const messageType = reader.readUInt8();
+      switch (messageType) {
+        case 16:
+          this.updateNodes(reader);
+          break;
+        case 64:
+          this.updateOffset(reader);
+          break;
+      }
+    } catch (e) {
+      logger.warn(`[Minion] handleMessage error: ${e.message}`);
     }
   }
   ghostCells(reader) {
@@ -279,111 +295,114 @@ export class Minion {
     [this.rX, this.rY] = mapping[quadrant - 1];
   }
   updateNodes(reader) {
-    const removedCount = reader.readUInt16LE();
-    for (let i = 0; i < removedCount; i++) {
-      if (this.playerCells[reader.readUInt32LE()]) {
-        const cell = this.playerCells[reader.readUInt32LE()];
-        if (cell) cell.destroy(this);
-      }
-    }
-    while (true) {
-      const cellId = reader.readUInt32LE();
-      if (cellId === 0) break;
-      const x = reader.readInt32LE();
-      const y = reader.readInt32LE();
-      const size = reader.readUInt16LE();
-      const flags = reader.readUInt8();
-      const isVirus = !!(flags & 1);
-      let skinName = null;
-      let color = null;
-      let name = null;
-      let extraFlags = 0;
-      if (flags & 128) {
-        extraFlags = reader.readUInt8();
-      }
-      if (flags & 2) {
-        color = helper.intToHex(
-          (reader.readUInt8() << 16) |
-            (reader.readUInt8() << 8) |
-            reader.readUInt8()
-        );
-      }
-      if (flags & 4) name = reader.readStringNT("utf8");
-      if (flags & 8) skinName = reader.readStringNT("utf8");
-      const isAgitated = !!(flags & 16);
-      const isFood = !!(extraFlags & 1);
-      const isFriend = !!(extraFlags & 2);
-      let accountId = 0;
-      if (extraFlags & 4) {
-        reader.readOffset += 4;
-        accountId = reader.readUInt32LE(reader.readOffset - 4);
-      }
-      let cell = this.playerCells[cellId];
-      if (!cell) {
-        cell = new Entity(cellId, accountId);
-        this.playerCells[cellId] = cell;
-      }
-      if (color !== null) {
-        cell.color = color;
-      }
-      if (skinName !== null) {
-        cell.name = unescape(encodeURIComponent(skinName));
-      }
-      if (name !== null) {
-        cell.skinName = name;
-      }
-      if (this.myCellIds[cellId] && this.ownCells.indexOf(cell) === -1) {
-        cell.isMine = true;
-        this.ownCells.push(cell);
-      }
-      cell.x = x;
-      cell.y = y;
-      cell.size = size;
-      cell.isFood = isFood;
-      cell.isVirus = isVirus;
-      cell.agitated = isAgitated;
-      cell.isFriend = isFriend;
-      cell.accountID = accountId;
-    }
-    const eatenCount = reader.readUInt16LE();
-    for (let i = 0; i < eatenCount; i++) {
-      const cellId = reader.readUInt32LE();
-      if (this.playerCells[cellId]) {
-        this.playerCells[cellId].destroy(this);
-      }
-    }
-    if (this.isAlive && this.ownCells.length === 0) {
-      if (this.moveInterval) {
-        clearInterval(this.moveInterval);
-        this.moveInterval = null;
-      }
-      if (!this.facebookBots && this.followMouseTimeout) {
-        clearTimeout(this.followMouseTimeout);
-        this.followMouse = false;
-        this.followMouseTimeout = null;
-      }
-      this.isAlive = false;
-      this.isNearMouse = false;
-      const skinSettings = config.facebookBotSettings.skin;
-      if (skinSettings.enable && this.facebookBots) {
-        const randomIndex = Math.floor(
-          Math.random() * skinSettings.names.length
-        );
-        const skinName = skinSettings.names[randomIndex];
-        manager.changeSkin(this.t, skinName, (skinBuffer) => {
-          this.send(skinBuffer, true);
-        });
-      }
-      // Aggressive spawn retry: keep trying every 50ms until alive
-      if (this.spawnInterval) clearInterval(this.spawnInterval);
-      this.spawnInterval = setInterval(() => {
-        if (this.isAlive) {
-          clearInterval(this.spawnInterval);
-          this.spawnInterval = null;
-          return;
+    try {
+      const removedCount = reader.readUInt16LE();
+      for (let i = 0; i < removedCount; i++) {
+        if (this.playerCells[reader.readUInt32LE()]) {
+          const cell = this.playerCells[reader.readUInt32LE()];
+          if (cell) cell.destroy(this);
         }
-        this.send(buffers.spawn(this.client.botName), true);
-      }, 50);
+      }
+      while (reader.remaining() >= 4) {
+        const cellId = reader.readUInt32LE();
+        if (cellId === 0) break;
+        const x = reader.readInt32LE();
+        const y = reader.readInt32LE();
+        const size = reader.readUInt16LE();
+        const flags = reader.readUInt8();
+        const isVirus = !!(flags & 1);
+        let skinName = null;
+        let color = null;
+        let name = null;
+        let extraFlags = 0;
+        if (flags & 128) {
+          extraFlags = reader.readUInt8();
+        }
+        if (flags & 2) {
+          color = helper.intToHex(
+            (reader.readUInt8() << 16) |
+              (reader.readUInt8() << 8) |
+              reader.readUInt8()
+          );
+        }
+        if (flags & 4) name = reader.readStringNT("utf8");
+        if (flags & 8) skinName = reader.readStringNT("utf8");
+        const isAgitated = !!(flags & 16);
+        const isFood = !!(extraFlags & 1);
+        const isFriend = !!(extraFlags & 2);
+        let accountId = 0;
+        if (extraFlags & 4) {
+          reader.readOffset += 4;
+          accountId = reader.readUInt32LE(reader.readOffset - 4);
+        }
+        let cell = this.playerCells[cellId];
+        if (!cell) {
+          cell = new Entity(cellId, accountId);
+          this.playerCells[cellId] = cell;
+        }
+        if (color !== null) {
+          cell.color = color;
+        }
+        if (skinName !== null) {
+          cell.name = unescape(encodeURIComponent(skinName));
+        }
+        if (name !== null) {
+          cell.skinName = name;
+        }
+        if (this.myCellIds[cellId] && this.ownCells.indexOf(cell) === -1) {
+          cell.isMine = true;
+          this.ownCells.push(cell);
+        }
+        cell.x = x;
+        cell.y = y;
+        cell.size = size;
+        cell.isFood = isFood;
+        cell.isVirus = isVirus;
+        cell.agitated = isAgitated;
+        cell.isFriend = isFriend;
+        cell.accountID = accountId;
+      }
+      const eatenCount = reader.readUInt16LE();
+      for (let i = 0; i < eatenCount; i++) {
+        const cellId = reader.readUInt32LE();
+        if (this.playerCells[cellId]) {
+          this.playerCells[cellId].destroy(this);
+        }
+      }
+      if (this.isAlive && this.ownCells.length === 0) {
+        if (this.moveInterval) {
+          clearInterval(this.moveInterval);
+          this.moveInterval = null;
+        }
+        if (!this.facebookBots && this.followMouseTimeout) {
+          clearTimeout(this.followMouseTimeout);
+          this.followMouse = false;
+          this.followMouseTimeout = null;
+        }
+        this.isAlive = false;
+        this.isNearMouse = false;
+        const skinSettings = config.facebookBotSettings.skin;
+        if (skinSettings.enable && this.facebookBots) {
+          const randomIndex = Math.floor(
+            Math.random() * skinSettings.names.length
+          );
+          const skinName = skinSettings.names[randomIndex];
+          manager.changeSkin(this.t, skinName, (skinBuffer) => {
+            this.send(skinBuffer, true);
+          });
+        }
+        if (this.spawnInterval) clearInterval(this.spawnInterval);
+        this.spawnInterval = setInterval(() => {
+          if (this.isAlive) {
+            clearInterval(this.spawnInterval);
+            this.spawnInterval = null;
+            return;
+          }
+          this.send(buffers.spawn(this.client.botName), true);
+        }, 50);
+      }
+    } catch (e) {
+      logger.warn(`[Minion] updateNodes error: ${e.message}`);
     }
   }
   updateOffset(reader) {
@@ -404,136 +423,3 @@ export class Minion {
       this.mapOffsetFixed = true;
     }
   }
-  // OPTIMIZED: single pass over playerCells, 100ms interval
-  move() {
-    if (!this.isAlive) return;
-    const cells = this.ownCells;
-    if (cells.length === 0) return;
-
-    // Compute center
-    let cx = 0, cy = 0, csize = 0;
-    for (const { x, y, size } of cells) {
-      cx += x; cy += y; csize += size;
-    }
-    cx /= cells.length;
-    cy /= cells.length;
-
-    const clientX = this.client.userX / this.rX;
-    const clientY = this.client.userY / this.rY;
-
-    // Update isNearMouse
-    this.isNearMouse =
-      Math.hypot(clientX - cx, clientY - cy) < 4000 + helper.size2mass(csize) * 0.5;
-
-    // Default target: follow mouse
-    let targetX = clientX + this.offsetX;
-    let targetY = clientY + this.offsetY;
-
-    const useAI = this.client.botAi;
-    const useVShield = this.client.botVShield;
-    const cMass = helper.size2mass(csize);
-    const massOver2000 = cMass > 2000;
-    const botNameEncoded = unescape(encodeURIComponent(this.client.botName));
-    const playerName = this.client.playerName;
-    const playerAlive = this.client.isAlive;
-
-    // Single pass: find enemies, nearest food, nearest virus
-    let nearestFood = null, minFoodDist = Infinity;
-    let nearestVirus = null, minVirusDist = Infinity;
-    const enemies = [];
-
-    for (const cell of Object.values(this.playerCells)) {
-      if (cell.isMine) continue;
-
-      if (cell.isFood && !cell.isFriend && !cell.isVirus && !cell.agitated) {
-        if (useAI || !this.followMouse) {
-          const d = helper.calculateDistance(cx, cy, cell.x, cell.y);
-          if (d < minFoodDist) { nearestFood = cell; minFoodDist = d; }
-        }
-        continue;
-      }
-
-      if (cell.isVirus && !cell.isFriend && !cell.isFood && !cell.agitated) {
-        if (useVShield) {
-          const d = helper.calculateDistance(cx, cy, cell.x, cell.y);
-          if (d < minVirusDist) { nearestVirus = cell; minVirusDist = d; }
-        }
-        continue;
-      }
-
-      // Enemy check
-      if (cell.isFood || cell.isFriend || cell.isVirus) continue;
-      if (massOver2000) continue;
-      if (cell.name === playerName && playerAlive) continue;
-      if (cell.name === botNameEncoded) continue;
-      if (cell.size <= csize * 0.85) continue;
-
-      const dx = cell.x - cx, dy = cell.y - cy;
-      const distance = Math.hypot(dx, dy) - csize - cell.size;
-      if (distance < 150) {
-        enemies.push({ dx, dy, distance, sizeRatio: helper.size2mass(cell.size) / cMass });
-      }
-    }
-
-    // Choose target
-    if (enemies.length > 0) {
-      // Flee from enemies
-      const dxM = clientX - cx, dyM = clientY - cy;
-      const md = 1 + Math.hypot(dxM, dyM);
-      let moveX = dxM / md, moveY = dyM / md;
-      for (const { dx, dy, distance, sizeRatio } of enemies) {
-        const force = -10 * sizeRatio;
-        moveX += ((dx / distance) * force) / distance;
-        moveY += ((dy / distance) * force) / distance;
-      }
-      const totalForce = 1 + Math.hypot(moveX, moveY);
-      targetX = cx + (moveX / totalForce) * 2000;
-      targetY = cy + (moveY / totalForce) * 2000;
-    } else if (this.followMouse) {
-      if (useAI && useVShield) {
-        if (nearestVirus) { targetX = nearestVirus.x; targetY = nearestVirus.y; }
-        else if (nearestFood) { targetX = nearestFood.x; targetY = nearestFood.y; }
-      } else if (!useAI && useVShield) {
-        if (nearestVirus && minVirusDist < 10000) { targetX = nearestVirus.x; targetY = nearestVirus.y; }
-      } else if (useAI && !useVShield) {
-        if (nearestFood) { targetX = nearestFood.x; targetY = nearestFood.y; }
-      }
-      // else: follow mouse (default already set)
-    } else {
-      // !followMouse (first 7s): go to food or mouse
-      if (nearestFood) { targetX = nearestFood.x; targetY = nearestFood.y; }
-    }
-
-    this.send(buffers.moveTo(targetX, targetY, this.decryptionKey), true);
-  }
-  clearIntervals() {
-    if (this.moveInterval) {
-      clearInterval(this.moveInterval);
-      this.moveInterval = null;
-    }
-    if (this.spawnInterval) {
-      clearInterval(this.spawnInterval);
-      this.spawnInterval = null;
-    }
-  }
-  clearTimeouts() {
-    if (this.spawnTimeout) {
-      clearTimeout(this.spawnTimeout);
-      this.spawnTimeout = null;
-    }
-    if (this.errorTimeout) {
-      clearTimeout(this.errorTimeout);
-      this.errorTimeout = null;
-    }
-    if (this.followMouseTimeout) {
-      clearTimeout(this.followMouseTimeout);
-      this.followMouseTimeout = null;
-    }
-  }
-  stop() {
-    this.clearIntervals();
-    this.clearTimeouts();
-    this.ws?.terminate();
-    manager.clearTokenUsage();
-  }
-}
