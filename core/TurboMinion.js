@@ -160,6 +160,7 @@ export class TurboMinion {
     [this.rX, this.rY] = qm[this.client.rQuadrant - 1][q - 1];
   }
 
+  _nodeCount = 0; _foodCount = 0; _updateLog = 0;
   updateNodes(r) {
     try {
     const rc = r.readUInt16LE();
@@ -167,6 +168,7 @@ export class TurboMinion {
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
+    let totalNodes = 0;
     while (true) {
       const id = r.readUInt32LE(); if (id === 0) break;
       const x = r.readInt32LE(), y = r.readInt32LE(), s = r.readUInt16LE(), f = r.readUInt8();
@@ -188,12 +190,15 @@ export class TurboMinion {
       cl.x = x; cl.y = y; cl.size = s;
       cl.isFood = iFd; cl.isVirus = iv;
       cl.agitated = ia; cl.isFriend = iFr; cl.accountID = aid;
+      totalNodes++;
     }
     const ec = r.readUInt16LE();
     for (let i = 0; i < ec; i++) {
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
+    if (++this._updateLog % 20 === 0)
+      logger.info(`[DEBUG t${this.team}] updateNodes #${this._updateLog}: ${totalNodes} nodi, ownCells=${this.ownCells.length}, playerCells=${Object.keys(this.playerCells).length}, isAlive=${this.isAlive}`);
     if (this.isAlive && this.ownCells.length === 0) {
       if (this.moveInterval) { clearInterval(this.moveInterval); this.moveInterval = null; }
       if (!this.facebookBots && this.followMouseTimeout) {
@@ -227,9 +232,10 @@ export class TurboMinion {
     }
   }
 
+  _moveLog = 0;
   move() {
     if (!this.isAlive) return;
-    const cs = this.ownCells; if (cs.length === 0) return;
+    const cs = this.ownCells; if (cs.length === 0) { if (++this._moveLog <= 3) logger.warn(`[DEBUG t${this.team}] move: ownCells vuoto (isAlive=${this.isAlive})`); return; }
     let cx = 0, cy = 0, cz = 0;
     for (const { x, y, size } of cs) { cx += x; cy += y; cz += size; }
     cx /= cs.length; cy /= cs.length;
@@ -293,6 +299,7 @@ export class TurboMinion {
     } else {
       if (nF) { gX = nF.x; gY = nF.y; }
     }
+    if (++this._moveLog <= 3) logger.info(`[DEBUG t${this.team}] move: ownCells=${cs.length} → target (${gX|0},${gY|0}), userXY=(${this.client.userX},${this.client.userY})`);
     this.send(buffers.moveTo(gX, gY, this.decryptionKey), true);
   }
 
