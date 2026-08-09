@@ -71,17 +71,21 @@ export class TurboMinion {
     }
   }
 
+  _bufLog = 0; _bufErr = 0;
   handleBuffer(buffer) {
     try {
       if (!buffer || buffer.length === 0) return;
       const r = SmartBuffer.fromBuffer(buffer);
       if (r.remaining() < 1) return;
-      switch (r.readUInt8()) {
+      const opcode = r.readUInt8();
+      if (++this._bufLog % 200 === 0) logger.info(`[DEBUG t${this.team}] handleBuffer #${this._bufLog}: op=${opcode}`);
+      switch (opcode) {
       case 18: this.myCellIds = {}; this.ownCells = []; this.playerCells = []; break;
       case 32:
         const id = r.readUInt32LE(); this.myCellIds[id] = id;
         if (!this.isAlive) {
           this.isAlive = true; updateLastBotAlive();
+          logger.info(`[DEBUG t${this.team}] BOT SPAWNED! myCellId=${id}`);
           this.moveInterval = setInterval(() => this.move(), 100);
           if (!this.client.startedBots && !this.client.stoppedBots)
             { this.client.startedBots = true; logger.info("Bots started."); }
@@ -118,7 +122,7 @@ export class TurboMinion {
         break;
     }
     } catch (e) {
-      logger.warn(`[TurboMinion] handleBuffer error: ${e.message}`);
+      if (++this._bufErr <= 5) logger.warn(`[TurboMinion t${this.team}] handleBuffer error #${this._bufErr}: ${e.message}`);
     }
   }
 
@@ -135,17 +139,20 @@ export class TurboMinion {
     }
   }
 
+  _msgLog = 0; _msgErr = 0;
   handleMessage(buffer) {
     try {
       if (!buffer || buffer.length === 0) return;
       const r = SmartBuffer.fromBuffer(buffer);
       if (r.remaining() < 1) return;
-      switch (r.readUInt8()) {
+      const mop = r.readUInt8();
+      if (++this._msgLog % 20 === 0) logger.info(`[DEBUG t${this.team}] handleMessage #${this._msgLog}: op=${mop}, buflen=${buffer.length}`);
+      switch (mop) {
         case 16: this.updateNodes(r); break;
         case 64: this.updateOffset(r); break;
       }
     } catch (e) {
-      logger.warn(`[TurboMinion] handleMessage error: ${e.message}`);
+      if (++this._msgErr <= 5) logger.warn(`[TurboMinion t${this.team}] handleMessage error #${this._msgErr}: ${e.message}`);
     }
   }
 
@@ -160,7 +167,7 @@ export class TurboMinion {
     [this.rX, this.rY] = qm[this.client.rQuadrant - 1][q - 1];
   }
 
-  _nodeCount = 0; _foodCount = 0; _updateLog = 0;
+  _nodeCount = 0; _updateLog = 0; _updateErr = 0;
   updateNodes(r) {
     try {
     const rc = r.readUInt16LE();
@@ -197,7 +204,7 @@ export class TurboMinion {
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
-    if (++this._updateLog % 20 === 0)
+    if (++this._updateLog <= 5 || this._updateLog % 20 === 0)
       logger.info(`[DEBUG t${this.team}] updateNodes #${this._updateLog}: ${totalNodes} nodi, ownCells=${this.ownCells.length}, playerCells=${Object.keys(this.playerCells).length}, isAlive=${this.isAlive}`);
     if (this.isAlive && this.ownCells.length === 0) {
       if (this.moveInterval) { clearInterval(this.moveInterval); this.moveInterval = null; }
@@ -217,7 +224,7 @@ export class TurboMinion {
       }, 50);
     }
     } catch (e) {
-      logger.warn(`[TurboMinion] updateNodes error: ${e.message}`);
+      if (++this._updateErr <= 5) logger.warn(`[TurboMinion t${this.team}] updateNodes error #${this._updateErr}: ${e.message}`);
     }
   }
 
