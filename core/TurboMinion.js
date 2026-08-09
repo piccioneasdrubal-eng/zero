@@ -167,7 +167,7 @@ export class TurboMinion {
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
-    while (r.remaining() >= 4) {
+    while (true) {
       const id = r.readUInt32LE(); if (id === 0) break;
       const x = r.readInt32LE(), y = r.readInt32LE(), s = r.readUInt16LE(), f = r.readUInt8();
       const iv = !!(f & 1); let sn = null, c = null, nm = null, ef = 0;
