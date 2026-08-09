@@ -24,7 +24,7 @@ export class TurboMinion {
 
   connect() {
     const url = this.client.getServer(this.team);
-    logger.info(`[DEBUG t${this.team}] connecting to ${(url||'').substring(0,60)}...`);
+    logger.info(`[LOG t${this.team}] connecting to ${(url||'').substring(0,70)}`);
     this.ws = new WebSocket(url, {
       agent: this.proxyAgent, headers: helper.generateHeaders(), rejectUnauthorized: false
     });
@@ -35,19 +35,31 @@ export class TurboMinion {
     this.ws.onmessage = this.onmessage.bind(this);
   }
 
-  onopen() { logger.info(`[DEBUG t${this.team}] WS OPEN`); this.send(buffers.protocolVersion()); this.send(buffers.protocolKey()); }
+  send(buffer, encrypt = false) {
+    if (!this.ws) return;
+    encrypt && (buffer = helper.xorBuffer(buffer, this.encryptionKey));
+    this.encryptionKey && (this.encryptionKey = helper.rotateKey(this.encryptionKey));
+    if (this.ws.readyState === 1) this.ws.send(buffer);
+  }
+
+  onopen() {
+    logger.info(`[LOG t${this.team}] WS OPEN`);
+    this.send(buffers.protocolVersion()); this.send(buffers.protocolKey());
+  }
 
   onclose() {
-    logger.warn(`[DEBUG t${this.team}] WS CLOSED`);
+    logger.warn(`[LOG t${this.team}] WS CLOSED`);
     this.isClosed = true;
-    this.team === 0 ? this.client.connectedBotsA-- : this.client.connectedBotsB--;
+    if (this.team === 0) this.client.connectedBotsA--;
+    else this.client.connectedBotsB--;
     if (this.t !== -1 && this.facebookBots)
       manager.releaseToken(this.t, () => { this.t = -1; this.facebookBots = false; });
   }
 
-  onerror(e) {
-    logger.warn(`[DEBUG t${this.team}] WS ERROR: ${e?.message || 'unknown'}`);
-    this.isClosed = true; this.clearTimeouts(); this.clearIntervals();
+  onerror() {
+    logger.warn(`[LOG t${this.team}] WS ERROR`);
+    this.isClosed = true;
+    this.clearTimeouts(); this.clearIntervals();
     this.facebookBots = false;
     this.errorTimeout = setTimeout(() => {
       if (this.ws?.readyState === WebSocket.CONNECTING || this.ws?.readyState === WebSocket.OPEN)
@@ -60,24 +72,23 @@ export class TurboMinion {
       let pb = buffer;
       if (this.decryptionKey) pb = helper.xorBuffer(pb, this.decryptionKey ^ 31128);
       this.handleBuffer(pb);
-    } catch (e) { logger.warn(`[TM] onmessage err: ${e.message}`); }
+    } catch (e) {
+      logger.warn(`[TurboMinion] Pacchetto corrotto dal proxy: ${e.message}`);
+    }
   }
 
-  _bufLog = 0; _bufErr = 0;
   handleBuffer(buffer) {
     try {
       if (!buffer || buffer.length === 0) return;
       const r = SmartBuffer.fromBuffer(buffer);
       if (r.remaining() < 1) return;
-      const opcode = r.readUInt8();
-      if (++this._bufLog % 200 === 0) logger.info(`[D t${this.team}] buf #${this._bufLog}: op=${opcode}`);
-      switch (opcode) {
+      switch (r.readUInt8()) {
       case 18: this.myCellIds = {}; this.ownCells = []; this.playerCells = []; break;
       case 32:
         const id = r.readUInt32LE(); this.myCellIds[id] = id;
         if (!this.isAlive) {
           this.isAlive = true; updateLastBotAlive();
-          logger.info(`[D t${this.team}] SPAWNED id=${id}`);
+          logger.info(`[LOG t${this.team}] SPAWNED id=${id}`);
           this.moveInterval = setInterval(() => this.move(), 100);
           if (!this.client.startedBots && !this.client.stoppedBots)
             { this.client.startedBots = true; logger.info("Bots started."); }
@@ -98,7 +109,8 @@ export class TurboMinion {
         break;
       case 241:
         this.isConnected = true;
-        this.team === 0 ? this.client.connectedBotsA++ : this.client.connectedBotsB++;
+        if (this.team === 0) this.client.connectedBotsA++;
+        else this.client.connectedBotsB++;
         const srv = this.client.getServer(this.team);
         if (!srv) break;
         this.decryptionKey = r.readUInt32LE();
@@ -112,7 +124,9 @@ export class TurboMinion {
         this.handleMessage(helper.uncompressBuffer(r.toBuffer().subarray(5), Buffer.alloc(r.readUInt32LE())));
         break;
     }
-    } catch (e) { if (++this._bufErr <= 5) logger.warn(`[TM t${this.team}] buf err #${this._bufErr}: ${e.message}`); }
+    } catch (e) {
+      logger.warn(`[TurboMinion] handleBuffer error: ${e.message}`);
+    }
   }
 
   useMassBoost() {
@@ -128,19 +142,18 @@ export class TurboMinion {
     }
   }
 
-  _msgLog = 0; _msgErr = 0;
   handleMessage(buffer) {
     try {
       if (!buffer || buffer.length === 0) return;
       const r = SmartBuffer.fromBuffer(buffer);
       if (r.remaining() < 1) return;
-      const mop = r.readUInt8();
-      if (++this._msgLog % 20 === 0) logger.info(`[D t${this.team}] msg #${this._msgLog}: op=${mop}, len=${buffer.length}`);
-      switch (mop) {
+      switch (r.readUInt8()) {
         case 16: this.updateNodes(r); break;
         case 64: this.updateOffset(r); break;
       }
-    } catch (e) { if (++this._msgErr <= 5) logger.warn(`[TM t${this.team}] msg err #${this._msgErr}: ${e.message}`); }
+    } catch (e) {
+      logger.warn(`[TurboMinion] handleMessage error: ${e.message}`);
+    }
   }
 
   ghostCells(r) {
@@ -154,7 +167,6 @@ export class TurboMinion {
     [this.rX, this.rY] = qm[this.client.rQuadrant - 1][q - 1];
   }
 
-  _updateLog = 0; _updateErr = 0;
   updateNodes(r) {
     try {
     const rc = r.readUInt16LE();
@@ -162,7 +174,6 @@ export class TurboMinion {
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
-    let totalNodes = 0;
     while (true) {
       const id = r.readUInt32LE(); if (id === 0) break;
       const x = r.readInt32LE(), y = r.readInt32LE(), s = r.readUInt16LE(), f = r.readUInt8();
@@ -184,15 +195,12 @@ export class TurboMinion {
       cl.x = x; cl.y = y; cl.size = s;
       cl.isFood = iFd; cl.isVirus = iv;
       cl.agitated = ia; cl.isFriend = iFr; cl.accountID = aid;
-      totalNodes++;
     }
     const ec = r.readUInt16LE();
     for (let i = 0; i < ec; i++) {
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
-    if (++this._updateLog <= 5 || this._updateLog % 20 === 0)
-      logger.info(`[D t${this.team}] up #${this._updateLog}: ${totalNodes} nodes, own=${this.ownCells.length}, pCells=${Object.keys(this.playerCells).length}`);
     if (this.isAlive && this.ownCells.length === 0) {
       if (this.moveInterval) { clearInterval(this.moveInterval); this.moveInterval = null; }
       if (!this.facebookBots && this.followMouseTimeout) {
@@ -210,7 +218,9 @@ export class TurboMinion {
         this.send(buffers.spawn(this.client.getBotName(this.team)), true);
       }, 50);
     }
-    } catch (e) { if (++this._updateErr <= 5) logger.warn(`[TM t${this.team}] up err #${this._updateErr}: ${e.message}`); }
+    } catch (e) {
+      logger.warn(`[TurboMinion] updateNodes error: ${e.message}`);
+    }
   }
 
   updateOffset(r) {
@@ -224,10 +234,9 @@ export class TurboMinion {
     }
   }
 
-  _moveLog = 0;
   move() {
     if (!this.isAlive) return;
-    const cs = this.ownCells; if (cs.length === 0) { if (++this._moveLog <= 3) logger.warn(`[D t${this.team}] move: no ownCells`); return; }
+    const cs = this.ownCells; if (cs.length === 0) return;
     let cx = 0, cy = 0, cz = 0;
     for (const { x, y, size } of cs) { cx += x; cy += y; cz += size; }
     cx /= cs.length; cy /= cs.length;
@@ -253,7 +262,10 @@ export class TurboMinion {
         continue;
       }
       if (cl.isVirus && !cl.isFriend && !cl.isFood && !cl.agitated) {
-        if (uVS) { const d = helper.calculateDistance(cx, cy, cl.x, cl.y); if (d < mVd) { nV = cl; mVd = d; } }
+        if (uVS) {
+          const d = helper.calculateDistance(cx, cy, cl.x, cl.y);
+          if (d < mVd) { nV = cl; mVd = d; }
+        }
         continue;
       }
       if (cl.isFood || cl.isFriend || cl.isVirus) continue;
@@ -274,13 +286,20 @@ export class TurboMinion {
         mY += ((dy / distance) * f) / distance;
       }
       const tf = 1 + Math.hypot(mX, mY);
-      gX = cx + (mX / tf) * 2000; gY = cy + (mY / tf) * 2000;
+      gX = cx + (mX / tf) * 2000;
+      gY = cy + (mY / tf) * 2000;
     } else if (this.followMouse) {
-      if (uAI && uVS) { if (nV) { gX = nV.x; gY = nV.y; } else if (nF) { gX = nF.x; gY = nF.y; } }
-      else if (!uAI && uVS) { if (nV && mVd < 10000) { gX = nV.x; gY = nV.y; } }
-      else if (uAI && !uVS) { if (nF) { gX = nF.x; gY = nF.y; } }
-    } else { if (nF) { gX = nF.x; gY = nF.y; } }
-    if (++this._moveLog <= 3) logger.info(`[D t${this.team}] move ${cs.length}→(${gX|0},${gY|0})`);
+      if (uAI && uVS) {
+        if (nV) { gX = nV.x; gY = nV.y; }
+        else if (nF) { gX = nF.x; gY = nF.y; }
+      } else if (!uAI && uVS) {
+        if (nV && mVd < 10000) { gX = nV.x; gY = nV.y; }
+      } else if (uAI && !uVS) {
+        if (nF) { gX = nF.x; gY = nF.y; }
+      }
+    } else {
+      if (nF) { gX = nF.x; gY = nF.y; }
+    }
     this.send(buffers.moveTo(gX, gY, this.decryptionKey), true);
   }
 
