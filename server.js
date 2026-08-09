@@ -1,4 +1,4 @@
-// ═══ server.js — Turbo Engine v7 ═══
+// server.js – Turbo Engine v7
 import { config } from "./config/index.js";
 import TurboClient from "./core/TurboClient.js";
 import { helper, logger } from "./utils/index.js";
@@ -32,13 +32,22 @@ server.on("request", (req, res) => {
 
 manager.checkTokens((v) => {});
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  logger.info("Turbo Client Connected from " + ip);
+  
   const client = new TurboClient(ws);
-  logger.info("Turbo Client Connected");
+  
   ws.on("message", (buffer) => {
+    // DEBUG: log first 16 bytes of every message
+    const arr = Buffer.isBuffer(buffer) ? buffer : buffer;
+    const hex = Array.from(arr.slice(0, Math.min(16, arr.length))).map(b => b.toString(16).padStart(2,'0')).join(' ');
+    logger.info("Turbo RAW (len=" + arr.length + "): " + hex);
+    
     try { client.handleMessage(buffer); }
-    catch (e) { logger.warn("Turbo: bad msg"); }
+    catch (e) { logger.warn("Turbo: bad msg - " + e.message); }
   });
+  
   ws.on("close", () => { client.stopAll(); logger.warn("Turbo Client Disconnected"); });
   ws.on("error", () => { client.stopAll(); });
 });
