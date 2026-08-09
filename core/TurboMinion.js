@@ -18,15 +18,15 @@ export class TurboMinion {
     this.isConnected = false; this.isNearMouse = false;
     this.facebookBots = false; this.mapOffsetFixed = false;
     this.followMouseTimeout = null;
-    this.proxyAgent = helper.getProxy();
+    this.proxyAgent = null;
     this.connect();
   }
 
   connect() {
     const url = this.client.getServer(this.team);
-    logger.info(`[LOG t${this.team}] connecting to ${(url||'').substring(0,70)}`);
+    logger.info(`[LOG t${this.team}] connecting to ${(url||'').substring(0,60)}...`);
     this.ws = new WebSocket(url, {
-      agent: this.proxyAgent, headers: helper.generateHeaders(), rejectUnauthorized: false
+      headers: helper.generateHeaders(), rejectUnauthorized: false
     });
     this.ws.binaryType = "nodebuffer";
     this.ws.onopen = this.onopen.bind(this);
