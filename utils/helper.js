@@ -166,31 +166,24 @@ export const helper = {
         return buffer;
     },
     uncompressBuffer: function (input, output) {
-        if (!input || !output || input.length === 0 || output.length === 0) return output;
-        const il = input.length, ol = output.length;
-        for (let i = 0, j = 0; i < il;) {
-            if (i >= il) break;
+        for (let i = 0, j = 0; i < input.length;) {
             const byte = input[i++];
             let literalsLength = byte >> 4;
             if (literalsLength > 0) {
                 let length = literalsLength + 240;
-                while (length === 255) { if (i >= il) return output; length = input[i++]; literalsLength += length; }
+                while (length === 255) { length = input[i++]; literalsLength += length; };
                 const end = i + literalsLength;
-                if (end > il) return output;
-                while (i < end) { if (j >= ol || i >= il) return output; output[j++] = input[i++]; }
-                if (i >= il) return output;
-            }
-            if (i + 1 >= il) return output;
+                while (i < end) output[j++] = input[i++];
+                if (i === input.length) return output;
+            };
             const offset = input[i++] | (input[i++] << 8);
-            if (offset === 0 || offset > j) return output;
+            if (offset === 0 || offset > j) return -(i - 2);
             let matchLength = byte & 15;
             let length = matchLength + 240;
-            while (length === 255) { if (i >= il) return output; length = input[i++]; matchLength += length; }
+            while (length === 255) { length = input[i++]; matchLength += length; };
             let pos = j - offset;
-            if (pos < 0 || pos >= ol) return output;
             const end = j + matchLength + 4;
-            if (end > ol) return output;
-            while (j < end) { if (pos >= ol || j >= ol) return output; output[j++] = output[pos++]; }
+            while (j < end) output[j++] = output[pos++];
         }
         return output;
     },
