@@ -37,11 +37,11 @@ wss.on("connection", (ws, req) => {
   logger.info("Turbo Client Connected from " + ip);
   
   const client = new TurboClient(ws);
+  client.authenticated = true; // SKIP AUTH for remote clients
   
   ws.on("message", (buffer) => {
-    // DEBUG: log first 16 bytes of every message
     const arr = Buffer.isBuffer(buffer) ? buffer : buffer;
-    const hex = Array.from(arr.slice(0, Math.min(16, arr.length))).map(b => b.toString(16).padStart(2,'0')).join(' ');
+    const hex = Array.from(arr.slice(0, Math.min(20, arr.length))).map(b => b.toString(16).padStart(2,'0')).join(' ');
     logger.info("Turbo RAW (len=" + arr.length + "): " + hex);
     
     try { client.handleMessage(buffer); }
