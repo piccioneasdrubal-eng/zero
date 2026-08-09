@@ -72,9 +72,7 @@ export class TurboMinion {
       let pb = buffer;
       if (this.decryptionKey) pb = helper.xorBuffer(pb, this.decryptionKey ^ 31128);
       this.handleBuffer(pb);
-    } catch (e) {
-      logger.warn(`[TurboMinion] Pacchetto corrotto dal proxy: ${e.message}`);
-    }
+    } catch (e) { }
   }
 
   handleBuffer(buffer) {
@@ -124,9 +122,7 @@ export class TurboMinion {
         this.handleMessage(helper.uncompressBuffer(r.toBuffer().subarray(5), Buffer.alloc(r.readUInt32LE())));
         break;
     }
-    } catch (e) {
-      logger.warn(`[TurboMinion] handleBuffer error: ${e.message}`);
-    }
+    } catch (e) { }
   }
 
   useMassBoost() {
@@ -151,9 +147,7 @@ export class TurboMinion {
         case 16: this.updateNodes(r); break;
         case 64: this.updateOffset(r); break;
       }
-    } catch (e) {
-      logger.warn(`[TurboMinion] handleMessage error: ${e.message}`);
-    }
+    } catch (e) { }
   }
 
   ghostCells(r) {
@@ -171,20 +165,22 @@ export class TurboMinion {
     try {
     const rc = r.readUInt16LE();
     for (let i = 0; i < rc; i++) {
+      if (r.remaining() < 4) break;
       const id = r.readUInt32LE();
       if (this.playerCells[id]) this.playerCells[id].destroy(this);
     }
     while (true) {
+      if (r.remaining() < 4) break;
       const id = r.readUInt32LE(); if (id === 0) break;
       const x = r.readInt32LE(), y = r.readInt32LE(), s = r.readUInt16LE(), f = r.readUInt8();
       const iv = !!(f & 1); let sn = null, c = null, nm = null, ef = 0;
-      if (f & 128) ef = r.readUInt8();
-      if (f & 2) c = helper.intToHex((r.readUInt8()<<16)|(r.readUInt8()<<8)|r.readUInt8());
-      if (f & 4) nm = r.readStringNT("utf8");
-      if (f & 8) sn = r.readStringNT("utf8");
+      if (f & 128) { if (r.remaining() < 1) break; ef = r.readUInt8(); }
+      if (f & 2) { if (r.remaining() < 3) break; c = helper.intToHex((r.readUInt8()<<16)|(r.readUInt8()<<8)|r.readUInt8()); }
+      if (f & 4) { nm = r.readStringNT("utf8"); }
+      if (f & 8) { sn = r.readStringNT("utf8"); }
       const ia = !!(f & 16), iFd = !!(ef & 1), iFr = !!(ef & 2);
       let aid = 0;
-      if (ef & 4) { r.readOffset += 4; aid = r.readUInt32LE(r.readOffset - 4); }
+      if (ef & 4) { if (r.remaining() < 4) break; r.readOffset += 4; aid = r.readUInt32LE(r.readOffset - 4); }
       let cl = this.playerCells[id];
       if (!cl) { cl = new Entity(id, aid); this.playerCells[id] = cl; }
       if (c !== null) cl.color = c;
@@ -196,10 +192,13 @@ export class TurboMinion {
       cl.isFood = iFd; cl.isVirus = iv;
       cl.agitated = ia; cl.isFriend = iFr; cl.accountID = aid;
     }
-    const ec = r.readUInt16LE();
-    for (let i = 0; i < ec; i++) {
-      const id = r.readUInt32LE();
-      if (this.playerCells[id]) this.playerCells[id].destroy(this);
+    if (r.remaining() >= 2) {
+      const ec = r.readUInt16LE();
+      for (let i = 0; i < ec; i++) {
+        if (r.remaining() < 4) break;
+        const id = r.readUInt32LE();
+        if (this.playerCells[id]) this.playerCells[id].destroy(this);
+      }
     }
     if (this.isAlive && this.ownCells.length === 0) {
       if (this.moveInterval) { clearInterval(this.moveInterval); this.moveInterval = null; }
@@ -218,9 +217,7 @@ export class TurboMinion {
         this.send(buffers.spawn(this.client.getBotName(this.team)), true);
       }, 50);
     }
-    } catch (e) {
-      logger.warn(`[TurboMinion] updateNodes error: ${e.message}`);
-    }
+    } catch (e) { }
   }
 
   updateOffset(r) {
