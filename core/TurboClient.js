@@ -2,7 +2,6 @@ import { WebSocket } from "ws";
 import { TurboMinion } from "./TurboMinion.js";
 import { buffers, logger } from "../utils/index.js";
 import { SmartBuffer } from "smart-buffer";
-import { config } from "../config/index.js";
 import { verifyUserToken } from "../utils/auth.js";
 import { updateStartRequest } from "../server.js";
 
@@ -34,103 +33,108 @@ export default class TurboClient {
   }
 
   async handleMessage(buffer) {
-    const reader = SmartBuffer.fromBuffer(buffer);
-    const opcode = reader.readUInt8();
+    try {
+      if (!buffer || buffer.length === 0) return;
+      const reader = SmartBuffer.fromBuffer(buffer);
+      if (reader.remaining() < 1) return;
+      const opcode = reader.readUInt8();
 
-    if (!this.authenticated) {
-      if (opcode === 8) {
-        const token = reader.readStringNT();
-        logger.info("Turbo: received token [" + token + "] len=" + token.length);
-        const entry = verifyUserToken(token);
-        if (entry) {
-          this.authenticated = true;
-          this.tokenLabel = entry.label;
-          this.ws.send(Buffer.from([8, 1]));
-          logger.info("Turbo Auth OK: " + entry.label);
+      if (!this.authenticated) {
+        if (opcode === 8) {
+          const token = reader.readStringNT();
+          const entry = verifyUserToken(token);
+          if (entry) {
+            this.authenticated = true;
+            this.tokenLabel = entry.label;
+            this.ws.send(Buffer.from([8, 1]));
+            logger.info("Turbo Auth OK: " + entry.label);
+            return;
+          }
+          logger.warn("Turbo Auth FAILED");
+          this.ws.send(Buffer.from([8, 0]));
+          this.ws.close();
           return;
         }
-        logger.warn("Turbo Auth FAILED: token='" + token + "'");
-        this.ws.send(Buffer.from([8, 0]));
+        logger.warn("Turbo: Rejected opcode " + opcode);
         this.ws.close();
         return;
       }
-      logger.warn("Turbo: Rejected opcode " + opcode + " (not auth)");
-      this.ws.close();
-      return;
-    }
 
-    switch (opcode) {
-      case 0:
-        this.serverA = reader.readStringNT();
-        this.botNameA = reader.readStringNT();
-        this.botAmountA = reader.readUInt16LE();
-        this.startTeamA();
-        break;
-      case 1:
-        this.stopAll();
-        break;
-      case 2:
-        const sub = reader.readUInt8();
-        const val = !!reader.readUInt8();
-        if (sub === 0) { this.botVShieldA = val; this.botVShieldB = val; }
-        else if (sub === 1) { this.botAiA = val; this.botAiB = val; }
-        break;
-      case 3:
-        for (const bot of this.getAllBots())
-          if (bot.ws?.readyState === 1 && bot.isAlive && bot.isNearMouse && bot.followMouse)
-            bot.send(buffers.eject(), true);
-        break;
-      case 4:
-        for (const bot of this.getAllBots())
-          if (bot.ws?.readyState === 1 && bot.isAlive && bot.isNearMouse && bot.followMouse)
-            bot.send(buffers.split(), true);
-        break;
-      case 5:
-        this.userX = reader.readInt32LE();
-        this.userY = reader.readInt32LE();
-        break;
-      case 6:
-        const fType = reader.readUInt8();
-        this.formationA = fType; this.formationB = fType;
-        this.applyFormation(this.botsA, fType);
-        this.applyFormation(this.botsB, fType);
-        break;
-      case 7:
-        this.autoReconnect = !!reader.readUInt8();
-        break;
-      case 8:
-        const team = reader.readUInt8();
-        if (team === 1) {
-          this.serverB = reader.readStringNT();
-          this.botNameB = reader.readStringNT();
-          this.botAmountB = reader.readUInt16LE();
-          this.startTeamB();
-        }
-        break;
-      case 9:
-        const stopTeam = reader.readUInt8();
-        if (stopTeam === 0) this.stopTeamA();
-        else if (stopTeam === 1) this.stopTeamB();
-        break;
-      case 10:
-        reader.readUInt8();
-        this.userX = reader.readInt32LE();
-        this.userY = reader.readInt32LE();
-        break;
-      case 11:
-        const modeTeam = reader.readUInt8();
-        const mode = reader.readUInt8();
-        if (modeTeam === 0) { this.botAiA = (mode === 0); this.botVShieldA = false; }
-        else if (modeTeam === 1) { this.botAiB = (mode === 0); this.botVShieldB = false; }
-        break;
-      case 12:
-        const fTeam = reader.readUInt8();
-        const fType2 = reader.readUInt8();
-        if (fTeam === 0) { this.formationA = fType2; this.applyFormation(this.botsA, fType2); }
-        else if (fTeam === 1) { this.formationB = fType2; this.applyFormation(this.botsB, fType2); }
-        break;
-      default:
-        logger.warn("Turbo: Unknown opcode " + opcode);
+      switch (opcode) {
+        case 0:
+          this.serverA = reader.readStringNT();
+          this.botNameA = reader.readStringNT();
+          this.botAmountA = reader.readUInt16LE();
+          this.startTeamA();
+          break;
+        case 1:
+          this.stopAll();
+          break;
+        case 2:
+          const sub = reader.readUInt8();
+          const val = !!reader.readUInt8();
+          if (sub === 0) { this.botVShieldA = val; this.botVShieldB = val; }
+          else if (sub === 1) { this.botAiA = val; this.botAiB = val; }
+          break;
+        case 3:
+          for (const bot of this.getAllBots())
+            if (bot.ws?.readyState === 1 && bot.isAlive && bot.isNearMouse && bot.followMouse)
+              bot.send(buffers.eject(), true);
+          break;
+        case 4:
+          for (const bot of this.getAllBots())
+            if (bot.ws?.readyState === 1 && bot.isAlive && bot.isNearMouse && bot.followMouse)
+              bot.send(buffers.split(), true);
+          break;
+        case 5:
+          this.userX = reader.readInt32LE();
+          this.userY = reader.readInt32LE();
+          break;
+        case 6:
+          const fType = reader.readUInt8();
+          this.formationA = fType; this.formationB = fType;
+          this.applyFormation(this.botsA, fType);
+          this.applyFormation(this.botsB, fType);
+          break;
+        case 7:
+          this.autoReconnect = !!reader.readUInt8();
+          break;
+        case 8:
+          const team = reader.readUInt8();
+          if (team === 1) {
+            this.serverB = reader.readStringNT();
+            this.botNameB = reader.readStringNT();
+            this.botAmountB = reader.readUInt16LE();
+            this.startTeamB();
+          }
+          break;
+        case 9:
+          const stopTeam = reader.readUInt8();
+          if (stopTeam === 0) this.stopTeamA();
+          else if (stopTeam === 1) this.stopTeamB();
+          break;
+        case 10:
+          reader.readUInt8();
+          this.userX = reader.readInt32LE();
+          this.userY = reader.readInt32LE();
+          break;
+        case 11:
+          const modeTeam = reader.readUInt8();
+          const mode = reader.readUInt8();
+          if (modeTeam === 0) { this.botAiA = (mode === 0); this.botVShieldA = false; }
+          else if (modeTeam === 1) { this.botAiB = (mode === 0); this.botVShieldB = false; }
+          break;
+        case 12:
+          const fTeam = reader.readUInt8();
+          const fType2 = reader.readUInt8();
+          if (fTeam === 0) { this.formationA = fType2; this.applyFormation(this.botsA, fType2); }
+          else if (fTeam === 1) { this.formationB = fType2; this.applyFormation(this.botsB, fType2); }
+          break;
+        default:
+          logger.warn("Turbo: Unknown opcode " + opcode);
+      }
+    } catch (e) {
+      logger.warn(`[TurboClient] handleMessage error: ${e.message}`);
     }
   }
 
