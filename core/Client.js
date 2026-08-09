@@ -47,76 +47,82 @@ export default class Client {
     this.tokenLabel = "";
   }
   async handleMessage(buffer) {
-    const reader = SmartBuffer.fromBuffer(buffer);
-    const opcode = reader.readUInt8();
-    if (!this.authenticated) {
-      if (opcode === 8) {
-        const token = reader.readStringNT();
-        const entry = verifyUserToken(token);
-        if (entry) {
-          this.authenticated = true;
-          this.tokenLabel = entry.label;
-          this.ws.send(Buffer.from([8, 1]));
-          logger.info("Auth OK: " + entry.label);
+    try {
+      if (!buffer || buffer.length === 0) return;
+      const reader = SmartBuffer.fromBuffer(buffer);
+      if (reader.remaining() < 1) return;
+      const opcode = reader.readUInt8();
+      if (!this.authenticated) {
+        if (opcode === 8) {
+          const token = reader.readStringNT();
+          const entry = verifyUserToken(token);
+          if (entry) {
+            this.authenticated = true;
+            this.tokenLabel = entry.label;
+            this.ws.send(Buffer.from([8, 1]));
+            logger.info("Auth OK: " + entry.label);
+            return;
+          }
+          logger.warn("Auth FAILED: invalid token");
+          this.ws.send(Buffer.from([8, 0]));
+          this.ws.close();
           return;
         }
-        logger.warn("Auth FAILED: invalid token");
-        this.ws.send(Buffer.from([8, 0]));
+        logger.warn("Rejected msg opcode " + opcode + " (not authenticated)");
         this.ws.close();
         return;
       }
-      logger.warn("Rejected msg opcode " + opcode + " (not authenticated)");
-      this.ws.close();
-      return;
-    }
-    switch (opcode) {
-      case 0:
-        this.server = reader.readStringNT();
-        this.botName = reader.readStringNT();
-        this.botAmount = reader.readUInt16LE();
-        this.startBots();
-        break;
-      case 1:
-        this.stopBots();
-        break;
-      case 2:
-        reader.readUInt8() == 1
-          ? (this.botAi = !!reader.readUInt8())
-          : (this.botVShield = !!reader.readUInt8());
-        break;
-      case 3:
-        for (const bot of this.bots)
-          if (
-            bot.ws?.readyState === 1 &&
-            bot.isAlive &&
-            !this.botAi &&
-            bot.isNearMouse &&
-            bot.followMouse
-          )
-            bot.send(buffers.eject(), true);
-        break;
-      case 4:
-        for (const bot of this.bots)
-          if (
-            bot.ws?.readyState === 1 &&
-            bot.isAlive &&
-            !this.botAi &&
-            bot.isNearMouse &&
-            bot.followMouse
-          )
-            bot.send(buffers.split(), true);
-        break;
-      case 5:
-        this.userX = reader.readInt32LE();
-        this.userY = reader.readInt32LE();
-        break;
-      case 6:
-        this.isAlive = !!reader.readUInt8();
-        this.playerName = reader.readStringNT();
-        break;
-      case 7:
-        this.rQuadrant = reader.readUInt8();
-        break;
+      switch (opcode) {
+        case 0:
+          this.server = reader.readStringNT();
+          this.botName = reader.readStringNT();
+          this.botAmount = reader.readUInt16LE();
+          this.startBots();
+          break;
+        case 1:
+          this.stopBots();
+          break;
+        case 2:
+          reader.readUInt8() == 1
+            ? (this.botAi = !!reader.readUInt8())
+            : (this.botVShield = !!reader.readUInt8());
+          break;
+        case 3:
+          for (const bot of this.bots)
+            if (
+              bot.ws?.readyState === 1 &&
+              bot.isAlive &&
+              !this.botAi &&
+              bot.isNearMouse &&
+              bot.followMouse
+            )
+              bot.send(buffers.eject(), true);
+          break;
+        case 4:
+          for (const bot of this.bots)
+            if (
+              bot.ws?.readyState === 1 &&
+              bot.isAlive &&
+              !this.botAi &&
+              bot.isNearMouse &&
+              bot.followMouse
+            )
+              bot.send(buffers.split(), true);
+          break;
+        case 5:
+          this.userX = reader.readInt32LE();
+          this.userY = reader.readInt32LE();
+          break;
+        case 6:
+          this.isAlive = !!reader.readUInt8();
+          this.playerName = reader.readStringNT();
+          break;
+        case 7:
+          this.rQuadrant = reader.readUInt8();
+          break;
+      }
+    } catch (e) {
+      logger.warn(`[Client] handleMessage error: ${e.message}`);
     }
   }
   startBots() {
