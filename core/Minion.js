@@ -34,14 +34,20 @@ export class Minion {
     this.mapOffsetFixed = false;
     this.followMouseTimeout = null;
     this.loginSent = false;
-    this.token = config.tokenSettings.enableFacebook ? manager.getNextToken() : null;
-    if (this.token) {
-      logger.info(`Minion: token ottenuto (${this.token.substring(0, 12)}...)`);
-    } else {
-      logger.warn(`Minion: NESSUN token disponibile!`);
-    }
     this.proxyAgent = helper.getProxy();
-    this.connect();
+    this.token = null;
+    this._initToken().then(() => this.connect());
+  }
+
+  async _initToken() {
+    if (config.tokenSettings.enableFacebook) {
+      this.token = await manager.getNextToken();
+      if (this.token) {
+        logger.info(`Minion: token ottenuto (${this.token.substring(0, 12)}...)`);
+      } else {
+        logger.warn(`Minion: NESSUN token disponibile!`);
+      }
+    }
   }
 
   connect() {
@@ -145,7 +151,7 @@ export class Minion {
         logger.warn(`FB token rifiutato/scaduto, provo prossimo...`);
         if (this.token) {
           manager.releaseToken(this.token);
-          this.token = config.tokenSettings.enableFacebook ? manager.getNextToken() : null;
+          this.token = config.tokenSettings.enableFacebook ? manager.getNextTokenSync() : null;
           this.loginSent = false;
         }
         break;
