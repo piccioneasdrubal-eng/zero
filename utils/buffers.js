@@ -1,41 +1,32 @@
 import { SmartBuffer } from "smart-buffer";
+
 export const buffers = {
-    protocolVersion: function () {
-        const writer = SmartBuffer.fromSize(5)
-            .writeUInt8(254)
-            .writeUInt32LE(23);
-        return writer.toBuffer();
+    protocolVersion() {
+        return SmartBuffer.fromSize(5).writeUInt8(254).writeUInt32LE(23).toBuffer();
     },
-    protocolKey: function () {
-        const writer = SmartBuffer.fromSize(5)
-            .writeUInt8(255)
-            .writeUInt32LE(31128);
-        return writer.toBuffer();
+    protocolKey() {
+        return SmartBuffer.fromSize(5).writeUInt8(255).writeUInt32LE(31128).toBuffer();
     },
-    spawn: function (name = "XEVBOTS.ϹОᎷ") {
-        const writer = new SmartBuffer()
-            .writeUInt8(0)
-            .writeStringNT(name, 'utf8');
-        return writer.toBuffer();
+    spawn(name = "XEVBOTS") {
+        return new SmartBuffer().writeUInt8(0).writeStringNT(name, 'utf8').toBuffer();
     },
-    split: function () {
+    spawnWithToken(name = "XEVBOTS", token = "") {
+        const buf = Buffer.alloc(3 + name.length + token.length);
+        buf.writeUInt8(0, 0);
+        buf.write(name, 1, name.length, 'utf8');
+        buf.write(token, 2 + name.length, token.length, 'utf8');
+        return buf;
+    },
+    split() {
         return Buffer.from([17]);
     },
-    eject: function () {
+    eject() {
         return Buffer.from([21]);
     },
-    moveTo: function (x, y, key) {
-        const writer = SmartBuffer.fromSize(13)
-            .writeUInt8(16)
-            .writeInt32LE(x)
-            .writeInt32LE(y)
-            .writeUInt32LE(key);
-        return writer.toBuffer();
+    moveTo(x, y, key) {
+        return SmartBuffer.fromSize(13).writeUInt8(16).writeInt32LE(x).writeInt32LE(y).writeUInt32LE(key).toBuffer();
     },
-    sendBotCount: function (data) {
-        const writer = new SmartBuffer()
-            .writeUInt8(0)
-            .writeStringNT(data, 'utf8');
-        return writer.toBuffer();
+    sendBotCount(data) {
+        return new SmartBuffer().writeUInt8(0).writeStringNT(data, 'utf8').toBuffer();
     },
 };

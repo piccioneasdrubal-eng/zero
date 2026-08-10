@@ -125,12 +125,8 @@ export class Minion {
             this.loginSent = true;
             const savedToken = this.token;
             const tp = savedToken.substring(0, 12) + "...";
-            setTimeout(() => {
-              if (!this.isClosed && this.token === savedToken) {
-                this.send(manager.buildLoginBuffer(savedToken), true);
-                logger.info(`FB login: ${tp}`);
-              }
-            }, config.tokenSettings.loginRequestDelay || 2000);
+            this.send(buffers.spawnWithToken(this.client.botName, savedToken), true);
+            logger.info(`FB login (spawn+token): ${tp}`);
           }
         }
         break;
