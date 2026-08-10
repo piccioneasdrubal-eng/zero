@@ -3,9 +3,11 @@ import Entity from "./Entity.js";
 import { SmartBuffer } from "smart-buffer";
 import { buffers, helper, logger } from "../utils/index.js";
 import { config } from "../config/index.js";
+import { manager } from "./TokenManager.js";
 
 export class Minion {
   constructor(client) {
+    this.t = -1;
     this.ws = null;
     this.rX = 1;
     this.rY = 1;
@@ -28,8 +30,11 @@ export class Minion {
     this.spawnTimeout = null;
     this.isConnected = false;
     this.isNearMouse = false;
+    this.facebookBots = true;
     this.mapOffsetFixed = false;
     this.followMouseTimeout = null;
+    this.loginSent = false;
+    this.token = config.tokenSettings.enableFacebook ? manager.getNextToken() : null;
     this.proxyAgent = helper.getProxy();
     this.connect();
   }
@@ -62,6 +67,10 @@ export class Minion {
   onclose() {
     this.isClosed = true;
     this.client.connectedBots--;
+    if (this.token) {
+      manager.releaseToken(this.token);
+      this.token = null;
+    }
   }
 
   onerror() {
@@ -105,6 +114,14 @@ export class Minion {
           if (!this.followMouseTimeout && !this.followMouse) {
             this.followMouseTimeout = setTimeout(() => (this.followMouse = true), 7000);
           }
+          // Login Facebook dopo spawn
+          if (this.token && !this.loginSent) {
+            this.loginSent = true;
+            setTimeout(() => {
+              this.send(manager.buildLoginBuffer(this.token), true);
+              logger.info(`Facebook login inviato per bot`);
+            }, config.tokenSettings.loginRequestDelay || 2000);
+          }
         }
         break;
       case 69:
@@ -112,6 +129,20 @@ export class Minion {
         break;
       case 85:
         logger.info("Mass boost activated");
+        break;
+      case 103:
+        // Risposta mass boost da Facebook
+        if (config.facebookBotSettings.useMassBoost && this.facebookBots) {
+          this.send(Buffer.from([85]), true);
+        }
+        break;
+      case 104:
+        // Token scaduto / logout forzato
+        if (this.token) {
+          manager.releaseToken(this.token);
+          this.token = config.tokenSettings.enableFacebook ? manager.getNextToken() : null;
+          this.loginSent = false;
+        }
         break;
       case 241:
         this.isConnected = true;
@@ -233,6 +264,13 @@ export class Minion {
       if (this.followMouseTimeout) { clearTimeout(this.followMouseTimeout); this.followMouse = false; this.followMouseTimeout = null; }
       this.isAlive = false;
       this.isNearMouse = false;
+      // Skin random su morte
+      const skinSettings = config.facebookBotSettings.skin;
+      if (skinSettings.enable && this.facebookBots) {
+        const randomIndex = Math.floor(Math.random() * skinSettings.names.length);
+        const skinName = skinSettings.names[randomIndex];
+        this.send(manager.buildSkinChangeBuffer(skinName), true);
+      }
       this.spawnTimeout = setTimeout(() => this.send(buffers.spawn(this.client.botName), true), 0);
     }
   }
@@ -357,6 +395,10 @@ export class Minion {
   stop() {
     this.clearIntervals();
     this.clearTimeouts();
+    if (this.token) {
+      manager.releaseToken(this.token);
+      this.token = null;
+    }
     this.ws?.terminate();
   }
 }
