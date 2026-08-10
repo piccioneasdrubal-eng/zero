@@ -43,13 +43,14 @@ export class TokenManager {
         return token;
       }
     }
-    let best = null, minUsage = Infinity;
-    for (const token of this.tokens) {
-      const usage = this.tokenUsage[token] || 0;
-      if (usage < minUsage) { minUsage = usage; best = token; }
-    }
-    this.tokenUsage[best] = minUsage + 1;
-    return best;
+    // Fallback: all saturated — reset and return first
+    logger.warn("TokenManager: tutti i token saturi, reset in corso...");
+    this.tokenUsage = {};
+    this.usedTokens.clear();
+    this.tokenIndex = 0;
+    this.tokenUsage[this.tokens[0]] = 1;
+    this.usedTokens.add(this.tokens[0]);
+    return this.tokens[0];
   }
 
   releaseToken(token) {
@@ -61,6 +62,10 @@ export class TokenManager {
   }
 
   buildLoginBuffer(token) {
+    if (!token) {
+      logger.warn("TokenManager: buildLoginBuffer called with null token!");
+      return Buffer.from([80, 0]);
+    }
     const buf = new SmartBuffer();
     buf.writeUInt8(80);
     buf.writeStringNT(token, "utf8");
