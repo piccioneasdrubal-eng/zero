@@ -93,7 +93,7 @@ export default class Client {
         if (this.connectedBots < maxBots && this.bots.length < maxBots) {
           this.bots.push(new Minion(this));
         }
-      }, 100);
+      }, 50);
       this.countInt = setInterval(() => {
         this.bots = this.bots.filter((bot) => !bot.isClosed);
         const aliveBots = this.bots.filter(
