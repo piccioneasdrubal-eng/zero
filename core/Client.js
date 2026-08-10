@@ -13,7 +13,7 @@ export default class Client {
     this.botAi = false;
     this.server = null;
     this.botName = "RayDay";
-    this.botAmount = 10;
+    this.botAmount = 300;
     this.rQuadrant = 0;
     this.botInt = null;
     this.playerName = "";
@@ -80,7 +80,7 @@ export default class Client {
 
   sendTokenStatus() {
     const status = manager.getStatus();
-    const msg = `Tokens: ${status.total} EAA + ${status.oauth||0} OAuth | ${JSON.stringify(status.usage)}`;
+    const msg = `Tokens: ${status.total} total | ${JSON.stringify(status.usage)}`;
     logger.info(msg);
     this.ws?.send(buffers.sendBotCount(msg));
   }
@@ -90,30 +90,39 @@ export default class Client {
       this.stoppedBots = false;
       const maxBots = this.botAmount;
       this.botInt = setInterval(() => {
-        if (this.bots.length < maxBots && !this.stoppedBots) {
+        if (this.connectedBots < maxBots && this.bots.length < maxBots) {
           this.bots.push(new Minion(this));
         }
-      }, 600);
-      this.startedBots = true;
-      logger.info(`Client Starting Bots.`);
+      }, 100);
+      this.countInt = setInterval(() => {
+        this.bots = this.bots.filter((bot) => !bot.isClosed);
+        const aliveBots = this.bots.filter(
+          (bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive
+        ).length;
+        const facebookBots = this.bots.filter(
+          (bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive && bot.facebookBots
+        ).length;
+        this.ws?.send(buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`));
+      }, 300);
+      logger.info(`Client Starting Bots (max: ${maxBots}).`);
       this.sendTokenStatus();
     }
   }
 
   stopBots() {
-    if (!this.stoppedBots) {
+    if (this.startedBots || !this.stoppedBots) {
+      clearInterval(this.botInt);
+      clearInterval(this.countInt);
+      this.botTimeout.forEach((id) => clearTimeout(id));
+      this.bots.forEach((bot) => bot.stop());
+      this.botInt = null;
+      this.countInt = null;
+      this.bots.length = 0;
       this.stoppedBots = true;
       this.startedBots = false;
-      clearInterval(this.botInt);
-      this.botInt = null;
-      for (const bot of this.bots) bot.stop();
-      this.bots = [];
-      logger.warn("Client Bots Stopped!");
+      this.botTimeout.length = 0;
+      this.ws?.send(Buffer.from([1]));
+      logger.warn(`Client Bots Stopped!`);
     }
-  }
-
-  disconnect() {
-    this.stopBots();
-    this.ws?.terminate();
   }
 }
