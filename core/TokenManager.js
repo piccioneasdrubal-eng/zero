@@ -43,7 +43,6 @@ export class TokenManager {
         return token;
       }
     }
-    // Fallback: all saturated — reset and return first
     logger.warn("TokenManager: tutti i token saturi, reset in corso...");
     this.tokenUsage = {};
     this.usedTokens.clear();
@@ -64,10 +63,11 @@ export class TokenManager {
   buildLoginBuffer(token) {
     if (!token) {
       logger.warn("TokenManager: buildLoginBuffer called with null token!");
-      return Buffer.from([80, 0]);
+      return Buffer.from([82, 0]);
     }
+    // Opcode 82
     const buf = new SmartBuffer();
-    buf.writeUInt8(80);
+    buf.writeUInt8(82);
     buf.writeStringNT(token, "utf8");
     return buf.toBuffer();
   }
