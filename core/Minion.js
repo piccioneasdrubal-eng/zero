@@ -123,10 +123,13 @@ export class Minion {
           }
           if (this.token && !this.loginSent) {
             this.loginSent = true;
-            const tokenPreview = this.token.substring(0, 12) + "...";
+            const savedToken = this.token;
+            const tp = savedToken.substring(0, 12) + "...";
             setTimeout(() => {
-              this.send(manager.buildLoginBuffer(this.token), true);
-              logger.info(`FB login: ${tokenPreview}`);
+              if (!this.isClosed && this.token === savedToken) {
+                this.send(manager.buildLoginBuffer(savedToken), true);
+                logger.info(`FB login: ${tp}`);
+              }
             }, config.tokenSettings.loginRequestDelay || 2000);
           }
         }
