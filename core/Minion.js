@@ -121,7 +121,6 @@ export class Minion {
           if (!this.followMouseTimeout && !this.followMouse) {
             this.followMouseTimeout = setTimeout(() => (this.followMouse = true), 7000);
           }
-          // Login Facebook dopo spawn
           if (this.token && !this.loginSent) {
             this.loginSent = true;
             const tokenPreview = this.token.substring(0, 12) + "...";
@@ -271,7 +270,6 @@ export class Minion {
       if (this.followMouseTimeout) { clearTimeout(this.followMouseTimeout); this.followMouse = false; this.followMouseTimeout = null; }
       this.isAlive = false;
       this.isNearMouse = false;
-      // Skin random su morte
       const skinSettings = config.facebookBotSettings.skin;
       if (skinSettings.enable && this.facebookBots) {
         const randomIndex = Math.floor(Math.random() * skinSettings.names.length);
@@ -402,10 +400,6 @@ export class Minion {
   stop() {
     this.clearIntervals();
     this.clearTimeouts();
-    if (this.token) {
-      manager.releaseToken(this.token);
-      this.token = null;
-    }
     this.ws?.terminate();
   }
 }
