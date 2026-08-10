@@ -1,72 +1,47 @@
-// server.js – Turbo Engine v7
-import { config } from "./config/index.js";
-import TurboClient from "./core/TurboClient.js";
+import { config } from './config/index.js';
+import Client from './core/Client.js';
 import { helper, logger } from "./utils/index.js";
-import { WebSocketServer } from "ws";
-import TokenManager from "./core/TokenManager.js";
-import { fetchProxies } from "./scripts/fetchProxies.js";
+import { WebSocketServer } from 'ws';
+import { fetchProxies } from './scripts/fetchProxies.js';
 
-const manager = new TokenManager();
-const server = helper.createServer();
-const wss = new WebSocketServer({ server: server });
+const wss = new WebSocketServer({ port: config.serverSettings.port });
 
-let lastBotAliveTime = 0;
-let startRequestTime = 0;
+logger.info("============================================");
+logger.info("  ZeroExtens Bots PRO - Server");
+logger.info(`  Porta: ${config.serverSettings.port}`);
+logger.info(`  Proxy: ${config.proxySettings.enableProxy ? "ON" : "OFF"}`);
+logger.info("============================================");
 
-export function updateLastBotAlive() { lastBotAliveTime = Date.now(); }
-export function updateStartRequest() { startRequestTime = Date.now(); }
+wss.on('connection', (ws) => {
+  const client = new Client(ws);
+  logger.info('Client Connesso!');
 
-server.on("request", (req, res) => {
-  if (req.url === "/" || req.url === "/health") {
-    const now = Date.now();
-    if (startRequestTime > 0 && (now - startRequestTime > 60000) && (lastBotAliveTime < startRequestTime)) {
-      logger.warn("Watchdog: restarting...");
-      res.writeHead(503); res.end("UNHEALTHY");
-      setTimeout(() => process.exit(1), 500);
-      return;
+  const logLocalIPs = () => {
+    logger.info(`Bot name: ${client.botName || '(non impostato)'} | Bot max: ${client.botAmount}`);
+  };
+
+  ws.on('message', (buffer) => {
+    try {
+      client.handleMessage(buffer);
+    } catch (e) {
+      logger.warn('Pacchetto corrotto - ignorato');
     }
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("XEVBots Turbo OK");
-  }
-});
-
-manager.checkTokens((v) => {});
-
-wss.on("connection", (ws, req) => {
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  logger.info("Turbo Client Connected from " + ip);
-  
-  const client = new TurboClient(ws);
-  client.authenticated = true; // SKIP AUTH for remote clients
-  
-  ws.on("message", (buffer) => {
-    const arr = Buffer.isBuffer(buffer) ? buffer : buffer;
-    const hex = Array.from(arr.slice(0, Math.min(20, arr.length))).map(b => b.toString(16).padStart(2,'0')).join(' ');
-    logger.info("Turbo RAW (len=" + arr.length + "): " + hex);
-    
-    try { client.handleMessage(buffer); }
-    catch (e) { logger.warn("Turbo: bad msg - " + e.message); }
   });
-  
-  ws.on("close", () => { client.stopAll(); logger.warn("Turbo Client Disconnected"); });
-  ws.on("error", () => { client.stopAll(); });
+
+  ws.on('close', () => {
+    client.stopBots();
+    logger.warn('Client Disconnesso!');
+  });
+
+  ws.on('error', (err) => {
+    logger.warn(`Errore WebSocket: ${err.message}`);
+  });
+
+  setTimeout(logLocalIPs, 1000);
 });
 
-const port = process.env.PORT || config.serverSettings.port;
-helper.setupProxies();
-
-server.listen(port, () => {
-  logger.info(`Turbo Server on ${port} with ${helper.proxies.length} proxies`);
+fetchProxies({ skipTest: true }).then(count => {
+  if (count > 0) logger.info(`Proxy caricati: ${count}`);
 });
 
-fetchProxies({skipTest:true}).then(count => {
-  if (count > 0) helper.setupProxies();
-}).catch(e => {});
-
-setInterval(() => {
-  fetchProxies({skipTest:true}).then(count => {
-    if (count > 0) helper.setupProxies();
-  }).catch(e => {});
-}, 60 * 60 * 1000);
-
-export { manager };
+logger.info(`Server in ascolto su porta ${config.serverSettings.port}`);

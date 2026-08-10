@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: zero-bots
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: "8080"
