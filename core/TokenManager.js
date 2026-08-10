@@ -31,11 +31,7 @@ export class TokenManager {
 
   getNextToken() {
     if (this.tokens.length === 0) return null;
-    
-    if (this.usedTokens.size >= this.tokens.length) {
-      this.usedTokens.clear();
-    }
-    
+    if (this.usedTokens.size >= this.tokens.length) this.usedTokens.clear();
     for (let i = 0; i < this.tokens.length; i++) {
       const idx = (this.tokenIndex + 1 + i) % this.tokens.length;
       const token = this.tokens[idx];
@@ -47,15 +43,10 @@ export class TokenManager {
         return token;
       }
     }
-    
-    let best = null;
-    let minUsage = Infinity;
+    let best = null, minUsage = Infinity;
     for (const token of this.tokens) {
       const usage = this.tokenUsage[token] || 0;
-      if (usage < minUsage) {
-        minUsage = usage;
-        best = token;
-      }
+      if (usage < minUsage) { minUsage = usage; best = token; }
     }
     this.tokenUsage[best] = minUsage + 1;
     return best;
@@ -64,9 +55,7 @@ export class TokenManager {
   releaseToken(token) {
     if (token && this.tokenUsage[token]) {
       this.tokenUsage[token]--;
-      if (this.tokenUsage[token] <= 0) {
-        delete this.tokenUsage[token];
-      }
+      if (this.tokenUsage[token] <= 0) delete this.tokenUsage[token];
       this.usedTokens.delete(token);
     }
   }
@@ -85,8 +74,14 @@ export class TokenManager {
     return buf.toBuffer();
   }
 
-  buildMassBoostBuffer() {
-    return Buffer.from([85]);
+  buildMassBoostBuffer() { return Buffer.from([85]); }
+
+  getStatus() {
+    const usagePreview = {};
+    for (const [tok, count] of Object.entries(this.tokenUsage)) {
+      usagePreview[tok.substring(0, 12) + "..."] = count;
+    }
+    return { total: this.tokens.length, used: this.usedTokens.size, usage: usagePreview, maxPerToken: this.maxBotsPerToken };
   }
 }
 
