@@ -13,7 +13,7 @@ export default class Client {
     this.botAi = false;
     this.server = null;
     this.botName = "RayDay";
-    this.botAmount = 300;
+    this.botAmount = 200;
     this.rQuadrant = 0;
     this.botInt = null;
     this.playerName = "";
