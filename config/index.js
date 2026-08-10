@@ -26,7 +26,7 @@ export const config = {
     },
     tokenSettings: {
         enableFacebook: true,
-        maxBotsPerToken: 10,
-        loginRequestDelay: 2000,
+        maxBotsPerToken: 50,
+        loginRequestDelay: 1000,
     },
 };
