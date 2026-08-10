@@ -11,7 +11,9 @@ const TOKENS_FILE = path.join(__dirname, "..", "data", "tokens.json");
 export class TokenManager {
   constructor() {
     this.tokens = [];
+    this.oauthTokens = [];
     this.tokenIndex = -1;
+    this.oauthIndex = -1;
     this.usedTokens = new Set();
     this.tokenUsage = {};
     this.maxBotsPerToken = config.tokenSettings.maxBotsPerToken;
@@ -22,16 +24,39 @@ export class TokenManager {
     try {
       const data = fs.readFileSync(TOKENS_FILE, "utf-8");
       this.tokens = JSON.parse(data);
-      logger.info(`TokenManager: ${this.tokens.length} token caricati`);
+      logger.info(`TokenManager: ${this.tokens.length} token EAA caricati`);
     } catch (e) {
       logger.warn("TokenManager: nessun token trovato");
       this.tokens = [];
     }
   }
 
+  addOAuthToken(token) {
+    if (!this.oauthTokens.includes(token)) {
+      this.oauthTokens.push(token);
+      logger.info(`TokenManager: OAuth token aggiunto (totale: ${this.oauthTokens.length})`);
+    }
+  }
+
+  getUserAgent() {
+    const agents = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    ];
+    return agents[Math.floor(Math.random() * agents.length)];
+  }
+
   getNextToken() {
+    if (this.oauthTokens.length > 0) {
+      this.oauthIndex = (this.oauthIndex + 1) % this.oauthTokens.length;
+      return this.oauthTokens[this.oauthIndex];
+    }
     if (this.tokens.length === 0) return null;
-    if (this.usedTokens.size >= this.tokens.length) this.usedTokens.clear();
+    if (this.usedTokens.size >= this.tokens.length) {
+      this.usedTokens.clear();
+    }
     for (let i = 0; i < this.tokens.length; i++) {
       const idx = (this.tokenIndex + 1 + i) % this.tokens.length;
       const token = this.tokens[idx];
@@ -55,7 +80,9 @@ export class TokenManager {
   releaseToken(token) {
     if (token && this.tokenUsage[token]) {
       this.tokenUsage[token]--;
-      if (this.tokenUsage[token] <= 0) delete this.tokenUsage[token];
+      if (this.tokenUsage[token] <= 0) {
+        delete this.tokenUsage[token];
+      }
       this.usedTokens.delete(token);
     }
   }
@@ -65,7 +92,6 @@ export class TokenManager {
       logger.warn("TokenManager: buildLoginBuffer called with null token!");
       return Buffer.from([82, 0]);
     }
-    // Opcode 82
     const buf = new SmartBuffer();
     buf.writeUInt8(82);
     buf.writeStringNT(token, "utf8");
@@ -79,14 +105,18 @@ export class TokenManager {
     return buf.toBuffer();
   }
 
-  buildMassBoostBuffer() { return Buffer.from([85]); }
+  buildMassBoostBuffer() {
+    return Buffer.from([85]);
+  }
 
   getStatus() {
-    const usagePreview = {};
-    for (const [tok, count] of Object.entries(this.tokenUsage)) {
-      usagePreview[tok.substring(0, 12) + "..."] = count;
-    }
-    return { total: this.tokens.length, used: this.usedTokens.size, usage: usagePreview, maxPerToken: this.maxBotsPerToken };
+    return {
+      total: this.tokens.length,
+      oauth: this.oauthTokens.length,
+      used: this.usedTokens.size,
+      usage: { ...this.tokenUsage },
+      maxPerToken: this.maxBotsPerToken,
+    };
   }
 }
 

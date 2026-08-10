@@ -36,9 +36,13 @@ export default class Client {
         this.botAmount = reader.readUInt16LE();
         this.startBots();
         break;
-      case 1: this.stopBots(); break;
+      case 1:
+        this.stopBots();
+        break;
       case 2:
-        reader.readUInt8() == 1 ? (this.botAi = !!reader.readUInt8()) : (this.botVShield = !!reader.readUInt8());
+        reader.readUInt8() == 1
+          ? (this.botAi = !!reader.readUInt8())
+          : (this.botVShield = !!reader.readUInt8());
         break;
       case 3:
         for (const bot of this.bots)
@@ -58,14 +62,25 @@ export default class Client {
         this.isAlive = !!reader.readUInt8();
         this.playerName = reader.readStringNT();
         break;
-      case 7: this.rQuadrant = reader.readUInt8(); break;
-      case 8: this.sendTokenStatus(); break;
+      case 7:
+        this.rQuadrant = reader.readUInt8();
+        break;
+      case 8:
+        this.sendTokenStatus();
+        break;
+      case 9:
+        const oauthToken = reader.readStringNT();
+        if (oauthToken && oauthToken.length > 20) {
+          manager.addOAuthToken(oauthToken);
+          logger.info(`Client: ricevuto token OAuth (${oauthToken.substring(0, 12)}...)`);
+        }
+        break;
     }
   }
 
   sendTokenStatus() {
     const status = manager.getStatus();
-    const msg = `Tokens: ${status.total} total | usage: ${JSON.stringify(status.usage)}`;
+    const msg = `Tokens: ${status.total} EAA + ${status.oauth||0} OAuth | ${JSON.stringify(status.usage)}`;
     logger.info(msg);
     this.ws?.send(buffers.sendBotCount(msg));
   }
@@ -75,30 +90,30 @@ export default class Client {
       this.stoppedBots = false;
       const maxBots = this.botAmount;
       this.botInt = setInterval(() => {
-        if (this.connectedBots < maxBots && this.bots.length < maxBots) this.bots.push(new Minion(this));
-      }, 300);
-      this.countInt = setInterval(() => {
-        this.bots = this.bots.filter((bot) => !bot.isClosed);
-        const aliveBots = this.bots.filter((bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive).length;
-        const facebookBots = this.bots.filter((bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive && bot.facebookBots).length;
-        this.ws?.send(buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`));
-      }, 300);
+        if (this.bots.length < maxBots && !this.stoppedBots) {
+          this.bots.push(new Minion(this));
+        }
+      }, 600);
+      this.startedBots = true;
       logger.info(`Client Starting Bots.`);
       this.sendTokenStatus();
     }
   }
 
   stopBots() {
-    if (this.startedBots || !this.stoppedBots) {
-      clearInterval(this.botInt); clearInterval(this.countInt);
-      this.botTimeout.forEach((id) => clearTimeout(id));
-      this.bots.forEach((bot) => bot.stop());
-      this.botInt = null; this.countInt = null;
-      this.bots.length = 0;
-      this.stoppedBots = true; this.startedBots = false;
-      this.botTimeout.length = 0;
-      this.ws?.send(Buffer.from([1]));
-      logger.warn(`Client Bots Stopped!`);
+    if (!this.stoppedBots) {
+      this.stoppedBots = true;
+      this.startedBots = false;
+      clearInterval(this.botInt);
+      this.botInt = null;
+      for (const bot of this.bots) bot.stop();
+      this.bots = [];
+      logger.warn("Client Bots Stopped!");
     }
+  }
+
+  disconnect() {
+    this.stopBots();
+    this.ws?.terminate();
   }
 }
