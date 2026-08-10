@@ -1,13 +1,13 @@
 export const config = {
     serverSettings: {
-        port: 8080,
-        secure: false,
+        port: 8080,           // locale: 8080 (Render usava 80)
+        secure: false,        // niente HTTPS in locale
         keyPath: '',
         certPath: ''
     },
     proxySettings: {
         protocol: "http",
-        enableProxy: false
+        enableProxy: true     // proxy enabled
     },
     facebookBotSettings: {
         skin: {
@@ -20,13 +20,13 @@ export const config = {
                 'mystical_dwarf','brave_halfling','wild_werewolf',
                 'powerful_sorcerer','stealthy_assassin','valiant_knight',
             ],
-            enable: true,
+            enable: true,      // skin Facebook abilitato
         },
-        useMassBoost: true,
+        useMassBoost: true,    // mass boost abilitato
     },
     tokenSettings: {
-        enableFacebook: true,
-        maxBotsPerToken: 50,
-        loginRequestDelay: 1000,
+        enableFacebook: true,       // usa token Facebook
+        maxBotsPerToken: 50,        // max bot per token
+        loginRequestDelay: 1000,    // delay tra login (ms)
     },
 };

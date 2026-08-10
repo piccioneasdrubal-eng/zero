@@ -1,0 +1,5 @@
+# Inserisci i proxy uno per riga
+# Formato: http://ip:port oppure ip:port
+# Esempio:
+# 123.45.67.89:8080
+# http://user:pass@123.45.67.89:8080
