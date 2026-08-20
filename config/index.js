@@ -6,8 +6,8 @@ export const config = {
         certPath: ''
     },
     proxySettings: {
-        protocol: "http",
-        enableProxy: false
+        protocol: "https",
+        enableProxy: true
     },
     facebookBotSettings: {
         skin: {
@@ -26,7 +26,7 @@ export const config = {
     },
     tokenSettings: {
         enableFacebook: true,
-        maxBotsPerToken: 10,
+        maxBotsPerToken: 200,
         loginRequestDelay: 1000,
     },
 };
