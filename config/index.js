@@ -7,7 +7,7 @@ export const config = {
     },
     proxySettings: {
         protocol: "http",
-        enableProxy: true
+        enableProxy: false
     },
     facebookBotSettings: {
         skin: {
@@ -26,7 +26,7 @@ export const config = {
     },
     tokenSettings: {
         enableFacebook: true,
-        maxBotsPerToken: 50,
+        maxBotsPerToken: 10,
         loginRequestDelay: 1000,
     },
 };
