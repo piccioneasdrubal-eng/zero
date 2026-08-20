@@ -1,12 +1,12 @@
 export const config = {
     serverSettings: {
         port: 8080,
-        secure: false,
+        secure: true,
         keyPath: '',
         certPath: ''
     },
     proxySettings: {
-        protocol: "http",
+        protocol: "https",
         enableProxy: true
     },
     facebookBotSettings: {
