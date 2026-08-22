@@ -2,9 +2,25 @@ import { WebSocket } from "ws";
 import { Minion } from "./Minion.js";
 import { buffers, logger } from "../utils/index.js";
 import { SmartBuffer } from "smart-buffer";
-import { manager } from "./TokenManager.js";
-
 export default class Client {
+  ws;
+  bots;
+  userX;
+  userY;
+  botAi;
+  botName;
+  botAmount;
+  isAlive;
+  rQuadrant;
+  playerName;
+  botVShield;
+  startedBots;
+  stoppedBots;
+  connectedBots;
+  server;
+  botTimeout;
+  botInt;
+  countInt;
   constructor(ws) {
     this.ws = ws;
     this.bots = [];
@@ -13,7 +29,7 @@ export default class Client {
     this.botAi = false;
     this.server = null;
     this.botName = "RayDay";
-    this.botAmount = 500;
+    this.botAmount = 150;
     this.rQuadrant = 0;
     this.botInt = null;
     this.playerName = "";
@@ -25,7 +41,6 @@ export default class Client {
     this.stoppedBots = true;
     this.startedBots = false;
   }
-
   async handleMessage(buffer) {
     const reader = SmartBuffer.fromBuffer(buffer);
     const opcode = reader.readUInt8();
@@ -46,12 +61,24 @@ export default class Client {
         break;
       case 3:
         for (const bot of this.bots)
-          if (bot.ws?.readyState === 1 && bot.isAlive && !this.botAi && bot.isNearMouse && bot.followMouse)
+          if (
+            bot.ws?.readyState === 1 &&
+            bot.isAlive &&
+            !this.botAi &&
+            bot.isNearMouse &&
+            bot.followMouse
+          )
             bot.send(buffers.eject(), true);
         break;
       case 4:
         for (const bot of this.bots)
-          if (bot.ws?.readyState === 1 && bot.isAlive && !this.botAi && bot.isNearMouse && bot.followMouse)
+          if (
+            bot.ws?.readyState === 1 &&
+            bot.isAlive &&
+            !this.botAi &&
+            bot.isNearMouse &&
+            bot.followMouse
+          )
             bot.send(buffers.split(), true);
         break;
       case 5:
@@ -65,26 +92,8 @@ export default class Client {
       case 7:
         this.rQuadrant = reader.readUInt8();
         break;
-      case 8:
-        this.sendTokenStatus();
-        break;
-      case 9:
-        const oauthToken = reader.readStringNT();
-        if (oauthToken && oauthToken.length > 20) {
-          manager.addOAuthToken(oauthToken);
-          logger.info(`Client: ricevuto token OAuth (${oauthToken.substring(0, 12)}...)`);
-        }
-        break;
     }
   }
-
-  sendTokenStatus() {
-    const status = manager.getStatus();
-    const msg = `Tokens: ${status.total} total | ${JSON.stringify(status.usage)}`;
-    logger.info(msg);
-    this.ws?.send(buffers.sendBotCount(msg));
-  }
-
   startBots() {
     if (!this.startedBots) {
       this.stoppedBots = false;
@@ -93,22 +102,25 @@ export default class Client {
         if (this.connectedBots < maxBots && this.bots.length < maxBots) {
           this.bots.push(new Minion(this));
         }
-      }, 100);
+      }, 300);
       this.countInt = setInterval(() => {
         this.bots = this.bots.filter((bot) => !bot.isClosed);
         const aliveBots = this.bots.filter(
           (bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive
         ).length;
         const facebookBots = this.bots.filter(
-          (bot) => bot.ws?.readyState === WebSocket.OPEN && bot.isAlive && bot.facebookBots
+          (bot) =>
+            bot.ws?.readyState === WebSocket.OPEN &&
+            bot.isAlive &&
+            bot.facebookBots
         ).length;
-        this.ws?.send(buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`));
+        this.ws?.send(
+          buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`)
+        );
       }, 300);
-      logger.info(`Client Starting Bots (max: ${maxBots}).`);
-      this.sendTokenStatus();
+      logger.info(`Client Starting Bots.`);
     }
   }
-
   stopBots() {
     if (this.startedBots || !this.stoppedBots) {
       clearInterval(this.botInt);

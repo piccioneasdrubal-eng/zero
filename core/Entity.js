@@ -1,4 +1,17 @@
 export default class Entity {
+    id;
+    x;
+    y;
+    size;
+    name;
+    color;
+    skinName;
+    accountID;
+    isMine;
+    isFood;
+    isVirus;
+    isFriend;
+    agitated;
     constructor(id, accountID) {
         this.id = id;
         this.x = 0;
@@ -18,6 +31,7 @@ export default class Entity {
         delete bot.myCellIds[this.id];
         delete bot.playerCells[this.id];
         const index = bot.ownCells.indexOf(this);
-        if (index !== -1) bot.ownCells.splice(index, 1);
+        if (index !== -1)
+            bot.ownCells.splice(index, 1);
     }
 }
