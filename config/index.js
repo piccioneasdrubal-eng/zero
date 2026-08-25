@@ -1,13 +1,13 @@
 export const config = {
     serverSettings: {
         port: 80,
-        secure: false,
+        secure: true,
         keyPath: 'path/to/privkey.pem',
         certPath: 'path/to/fullchain.pem'
     },
     proxySettings: {
         protocol: "https",
-        enableProxy: false,
+        enableProxy: true,
     },
     facebookBotSettings: {
         skin: {
