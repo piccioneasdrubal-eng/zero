@@ -1,76 +1,246 @@
-import { config } from './config/index.js';
-import Client from './core/Client.js';
-import { helper, logger } from "./utils/index.js";
-import { WebSocketServer } from 'ws';
-import TokenManager from './core/TokenManager.js';
-import { fetchProxies } from './scripts/fetchProxies.js';
+/**
+ * fetchProxies.js — scarica proxy freschi ogni ora
+ *
+ * Output:
+ *   core/config/proxies.txt         — ip:port, tutti i tipi <10ms
+ *   core/config/proxies.json        — {proxy, latency_ms, type, sources}
+ *   core/config/proxies.csv         — CSV riepilogativo
+ *   core/config/proxies_http3ms.csv  — HTTP <3ms
+ *   core/config/proxies_socks5.txt  — SOCKS5 <5ms
+ *   core/config/proxies_socks5.json — SOCKS5 <5ms con metadati
+ *
+ * Fonti:
+ *   ProxyScrape, ProxyScan (HTTP/SOCKS4/SOCKS5), MultiProxy,
+ *   OpenProxyList (HTTP/SOCKS5), Geonode, ProxyListDownload
+ *
+ * Ottimizzazione anti-lag: tutte le fonti (e le pagine di ProxyListPlus)
+ * vengono scaricate IN PARALLELO invece che una dopo l'altra. Prima all'avvio
+ * servivano ~7 secondi di attesa, ora qualche secondo.
+ */
 
-const manager = new TokenManager();
-const server = helper.createServer();
-const wss = new WebSocketServer({ server: server });
+import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// ═══ Health check HTTP per Render & co. ═══
-// IMPORTANTE: deve rispondere 200, altrimenti Render considera il servizio
-// "non sano", lo fa ripartire e ogni riavvio provoca lag (cold start).
-server.on('request', (req, res) => {
-  if (req.url === '/' || req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('XevBots OK');
-  }
-});
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CFG = path.join(__dirname, '..', 'core', 'config');
+const PROXY_FILE   = path.join(CFG, 'proxies.txt');
+const PROXY_JSON   = path.join(CFG, 'proxies.json');
+const PROXY_CSV    = path.join(CFG, 'proxies.csv');
+const S5_FILE      = path.join(CFG, 'proxies_socks5.txt');
+const S5_JSON      = path.join(CFG, 'proxies_socks5.json');
+const HTTP3_CSV    = path.join(CFG, 'proxies_http3ms.csv');
+const ONCE = process.argv.includes('--once');
+const SKIP_TEST = process.argv.includes('--skip-test');
+const MAX_LATENCY = 10;
+const S5_MAX = 5;
 
-let serverListening = true;
+// ─── Fetch ───
+async function fetchText(url) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15_000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    return await r.text();
+  } finally { clearTimeout(t); }
+}
 
-manager.checkTokens((v) => {
-  // TokenManager handles its own logging
-});
+// ─── Parser ───
+const PROXY_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{2,5}(:.+)?$/;
+function parseProxies(raw) {
+  return raw.split(/[\r\n]+/).map(l => l.trim()).filter(l => PROXY_RE.test(l));
+}
+function parseProxifly(raw) {
+  return raw.split(/[\r\n]+/).map(l => l.trim()).filter(l => l.startsWith('http://')).map(l => l.replace(/^https?:\/\//, '')).filter(l => PROXY_RE.test(l));
+}
+function getHostPort(raw) {
+  const p = raw.split(':');
+  return { host: p[0], port: parseInt(p[1]) };
+}
 
-wss.on('connection', (ws) => {
-  const client = new Client(ws);
-  logger.info('Client Connected');
-  const handleDisconnect = () => {
-    client.stopBots();
-    logger.warn('Client Disconnected!');
-  };
-  ws.on('message', (buffer) => {
+// ─── ProxyListPlus HTML parser (multi-page, scaricate in parallelo) ───
+async function fetchProxyListPlus() {
+  const urls = ['https://list.proxylistplus.com/Fresh-HTTP-Proxy'];
+  for (let i = 2; i <= 10; i++) urls.push(`https://list.proxylistplus.com/Fresh-HTTP-Proxy-List-${i}`);
+  console.log(`  ProxyListPlus: fetching ${urls.length} pages...`);
+  const pages = await Promise.allSettled(urls.map(async (url) => {
     try {
-      client.handleMessage(buffer);
-    } catch (e) {
-      logger.warn('Server: corrupted message — dropped');
+      const text = await fetchText(url);
+      const re = /<td[^>]*>\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*<\/td>\s*<td[^>]*>\s*(\d{2,5})\s*<\/td>/gi;
+      const found = [];
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const proxy = `${m[1]}:${m[2]}`;
+        if (PROXY_RE.test(proxy)) found.push(proxy);
+      }
+      return found;
+    } catch { /* skip dead page */ return []; }
+  }));
+  return [...new Set(pages.flatMap(r => r.status === 'fulfilled' ? r.value : []))];
+}
+
+// ─── Fonti ───
+const SOURCES = [
+  { name:'ProxyScrape',       type:'HTTP',   url:'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all', parser:parseProxies },
+  { name:'ProxyListDownload', type:'HTTP',   url:'https://www.proxy-list.download/api/v1/get?type=http', parser:parseProxies },
+  { name:'Geonode',           type:'HTTP',   url:'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc&protocols=http&anonymityLevel=elite&anonymityLevel=anonymous&speed=fast', parser(r){ try{return(JSON.parse(r).data||[]).map(p=>`${p.ip}:${p.port}`)}catch{return[]} } },
+  { name:'ProxyScan',         type:'HTTP',   url:'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt',   parser:parseProxies },
+  { name:'ProxyScan',         type:'SOCKS4', url:'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt', parser:parseProxies },
+  { name:'ProxyScan',         type:'SOCKS5', url:'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt', parser:parseProxies },
+  { name:'MultiProxy',        type:'HTTP',   url:'https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt', parser:parseProxifly },
+  { name:'OpenProxyList',     type:'HTTP',   url:'https://api.openproxylist.xyz/http.txt',   parser:parseProxies },
+  { name:'OpenProxyList',     type:'SOCKS5', url:'https://api.openproxylist.xyz/socks5.txt', parser:parseProxies },
+  { name:'ProxyListPlus',     type:'HTTP',   special:'proxylistplus' },
+];
+
+// ─── Test TCP ───
+async function testAllProxies(proxies, timeout=3000) {
+  const total=proxies.length, results=[];
+  for(let i=0;i<proxies.length;i+=50){
+    const batch=proxies.slice(i,i+50);
+    const settled=await Promise.allSettled(batch.map(p=>{
+      const{host,port}=getHostPort(p);const start=performance.now();
+      return new Promise((res,rej)=>{
+        const s=new net.Socket();s.setTimeout(timeout);
+        s.on('connect',()=>{const ms=Math.round(performance.now()-start);s.destroy();res({proxy:p,ms})});
+        s.on('timeout',()=>{s.destroy();rej()});
+        s.on('error',()=>{s.destroy();rej()});
+        s.connect(port,host);
+      });
+    }));
+    for(const r of settled) if(r.status==='fulfilled') results.push(r.value);
+    if(total>50){const avg=results.length?Math.round(results.reduce((a,r)=>a+r.ms,0)/results.length):0;process.stdout.write(`  Testing: ${Math.min(results.length+((i/50|0)*50-batch.length<0?0:0),total)}/${total}  (${results.length} alive, avg ${avg}ms)\r`)}
+  }
+  if(total>50) console.log('');
+  results.sort((a,b)=>a.ms-b.ms);
+  return results;
+}
+
+function loadExistingProxies() {
+  try{return fs.readFileSync(PROXY_FILE,'utf-8').split(/[\r\n]+/).map(l=>l.trim()).filter(l=>PROXY_RE.test(l))}catch{return[]}
+}
+
+// ─── Main ───
+async function fetchProxies(opts={}) {
+  const skipTest = SKIP_TEST || opts.skipTest;
+  const ts = new Date().toISOString();
+  console.log(`[ProxyFetcher] ${ts} — fetching ${skipTest?'(skip test) ':`(max ${MAX_LATENCY}ms, SOCKS5 <${S5_MAX}ms) `}...`);
+
+  const existing=loadExistingProxies();
+  const authProxies=existing.filter(p=>p.split(':').length>=4);
+  console.log(`  Existing auth: ${authProxies.length}`);
+
+  let freeProxies=[];
+  const proxyMeta=new Map();
+
+  // Scarica TUTTE le fonti in parallelo (prima: una dopo l'altra → ~7s di attesa)
+  const fetched = await Promise.allSettled(SOURCES.map(async (src) => {
+    try {
+      let list;
+      if(src.special==='proxylistplus'){
+        list=await fetchProxyListPlus();
+      }else{
+        const text=await fetchText(src.url);
+        list=src.parser(text);
+      }
+      return { src, list };
+    }catch(e){
+      return { src, list: [], error: e };
     }
+  }));
+
+  for(const r of fetched){
+    const { src, list, error } = r.value;
+    if(error){
+      console.warn(`  ${src.name} (${src.type}): FAILED — ${error.message || 'unknown'}`);
+      continue;
+    }
+    console.log(`  ${src.name} (${src.type}): ${list.length} proxies`);
+    freeProxies.push(...list);
+    for(const p of list){
+      if(!proxyMeta.has(p)) proxyMeta.set(p,{sources:new Set(),types:new Set()});
+      proxyMeta.get(p).sources.add(src.name);
+      proxyMeta.get(p).types.add(src.type);
+    }
+  }
+
+  const uniqueFree=[...new Set(freeProxies)];
+  console.log(`  Unique: ${uniqueFree.length}`);
+
+  let toSave;
+  if(skipTest){
+    // Salta validazione — fidati del file
+    console.log(`  Skip test: ${uniqueFree.length} proxies (pre-validated)`);
+    toSave=uniqueFree.map(p=>({proxy:p,ms:null}));
+  }else{
+    const allAlive=await testAllProxies(uniqueFree,3000);
+    if(allAlive.length>0){
+      const times=allAlive.map(r=>r.ms), s=[...times].sort((a,b)=>a-b);
+      console.log(`  All alive: ${allAlive.length}  |  min:${s[0]}ms  med:${s[Math.floor(s.length/2)]}ms  avg:${Math.round(times.reduce((a,t)=>a+t,0)/times.length)}ms  max:${s[s.length-1]}ms`);
+    }
+    const fastFree=allAlive.filter(r=>r.ms<MAX_LATENCY);
+    console.log(`  Under ${MAX_LATENCY}ms: ${fastFree.length}`);
+    toSave=fastFree.length>=5?fastFree:allAlive;
+
+    // Filtro SOCKS5 <5ms (solo se testato)
+    const socks5Fast=toSave.filter(r=>{
+      const m=proxyMeta.get(r.proxy);
+      return m && m.types.has('SOCKS5') && r.ms<S5_MAX;
+    });
+    console.log(`  SOCKS5 under ${S5_MAX}ms: ${socks5Fast.length}`);
+
+    // SOCKS5 TXT
+    fs.writeFileSync(S5_FILE,socks5Fast.map(r=>r.proxy).join('\n')+'\n','utf-8');
+    // SOCKS5 JSON
+    fs.writeFileSync(S5_JSON,JSON.stringify(socks5Fast.map(r=>{const m=proxyMeta.get(r.proxy);return{proxy:r.proxy,latency_ms:r.ms,type:'SOCKS5',sources:m?[...m.sources].sort():['unknown']}}),null,2),'utf-8');
+    console.log(`[ProxyFetcher] SOCKS5 → ${socks5Fast.length} (TXT+JSON)`);
+
+    // HTTP <3ms CSV (solo se testato)
+    const http3fast=toSave.filter(r=>{const m=proxyMeta.get(r.proxy);return m&&m.types.has('HTTP')&&!m.types.has('SOCKS4')&&!m.types.has('SOCKS5')&&r.ms<3});
+    fs.writeFileSync(HTTP3_CSV,'proxy,latency_ms,type,sources\n'+http3fast.map(r=>{const m=proxyMeta.get(r.proxy);return`${r.proxy},${r.ms},HTTP,${m?[...m.sources].sort().join(';'):'unknown'}`}).join('\n')+'\n','utf-8');
+    console.log(`[ProxyFetcher] HTTP <3ms CSV → ${http3fast.length}`);
+  }
+
+  const proxyList=toSave.map(r=>r.proxy);
+  const all=[...authProxies,...proxyList];
+  const clean=[...new Set(all.filter(p=>p&&p.trim()))];
+
+  fs.mkdirSync(CFG,{recursive:true});
+
+  // TXT
+  fs.writeFileSync(PROXY_FILE,clean.join('\n')+'\n','utf-8');
+  console.log(`[ProxyFetcher] TXT → ${clean.length} → ${PROXY_FILE}`);
+
+  // ─── JSON ───
+  const jsonProxies=[
+    ...authProxies.map(p=>({proxy:p,latency_ms:null,type:'HTTP',sources:['auth']})),
+    ...toSave.map(r=>{
+      const m=proxyMeta.get(r.proxy);
+      return {proxy:r.proxy,latency_ms:r.ms,type:m?[...m.types].sort().join(','):'HTTP',sources:m?[...m.sources].sort():['unknown']};
+    })
+  ];
+  fs.writeFileSync(PROXY_JSON,JSON.stringify(jsonProxies,null,2),'utf-8');
+  console.log(`[ProxyFetcher] JSON → ${jsonProxies.length} → ${PROXY_JSON}`);
+
+  // ─── CSV ───
+  const csvHeader='proxy,latency_ms,type,sources';
+  const csvRows=jsonProxies.map(p=>{
+    const srcs=p.sources.join(';');
+    return `${p.proxy},${p.latency_ms??''},${p.type},${srcs}`;
   });
-  ws.on('close', handleDisconnect);
-  ws.on('error', handleDisconnect);
-});
+  fs.writeFileSync(PROXY_CSV,csvHeader+'\n'+csvRows.join('\n')+'\n','utf-8');
+  console.log(`[ProxyFetcher] CSV → ${csvRows.length} → ${PROXY_CSV}`);
 
-// Avvia server SUBITO, fetch proxy in background (non bloccare l'avvio)
-// Port: Render assegna PORT env, altrimenti usa config
-const port = process.env.PORT || config.serverSettings.port;
+  const top3=toSave.slice(0,3).map(r=>`${r.proxy}(${r.ms??'?'}ms)`).join(', ');
+  console.log(`           fastest: ${top3}\n`);
+  return clean.length;
+}
 
-// 1. Carica proxy esistenti subito
-helper.setupProxies();
-
-// 2. Avvia server immediatamente (non aspettare fetchProxies)
-server.listen(port, () => {
-  serverListening = true;
-  logger.info(`Server started on port ${port} with ${helper.proxies.length} proxies`);
-});
-
-// 3. Refresh proxy in background (skip test, usa pre-validati)
-fetchProxies({skipTest:true}).then(count => {
-  if (count > 0) helper.setupProxies(); // ricarica con i nuovi
-  logger.info(`Fetched ${count} fresh proxies`);
-}).catch(e => {
-  logger.warn(`Proxy fetch failed: ${e.message}`);
-});
-
-// Aggiorna proxy ogni ora
-setInterval(() => {
-  fetchProxies({skipTest:true}).then(count => {
-    logger.info(`Refreshed ${count} proxies`);
-  }).catch(e => {
-    logger.warn(`Proxy refresh failed: ${e.message}`);
-  });
-}, 60 * 60 * 1000);
-
-export { manager };
+// ─── Entry ───
+export { fetchProxies };
+const isMain=process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1]);
+if(isMain){
+  if(ONCE){const c=await fetchProxies();process.exit(c>0?0:1)}
+  else{await fetchProxies();setInterval(()=>fetchProxies(),60*60*1000);console.log('[ProxyFetcher] Running — next fetch in 60 min')}
+}
