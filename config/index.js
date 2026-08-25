@@ -6,7 +6,7 @@ export const config = {
         certPath: 'path/to/fullchain.pem'
     },
     proxySettings: {
-        protocol: "https",
+        protocol: "http",
         enableProxy: true,
     },
     facebookBotSettings: {
