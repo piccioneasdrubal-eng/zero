@@ -7,6 +7,7 @@ import { config } from "../config/index.js";
 
 export class Minion {
   t;
+  token;
   ws;
   rX;
   rY;
@@ -31,8 +32,11 @@ export class Minion {
   moveInt;
   errorTimeout;
   myCellIds;
+  loggedIn;
   followMouseTimeout;
   spawnTimeout;
+  xpBoostUntil;
+  xpBoostTimeout;
 
   constructor(client) {
     this.ws = null;
@@ -45,7 +49,11 @@ export class Minion {
     this.myCellIds = {};
     this.ownCells = [];
     this.moveInt = null;
-    this.t = manager.t();
+    // FIX: assegna il token al campo giusto. Prima veniva salvato in "t"
+    // ma il resto del codice leggeva "token" (mai valorizzato) -> i bot
+    // non usavano mai i token Facebook (niente login, niente livello, niente boost).
+    this.token = manager.t();
+    this.t = this.token; // alias per la compatibilità con onclose/release
     this.client = client;
     this.isAlive = false;
     this.isClosed = false;
@@ -60,7 +68,10 @@ export class Minion {
     this.isNearMouse = false;
     this.facebookBots = true;
     this.mapOffsetFixed = false;
+    this.loggedIn = false;
     this.followMouseTimeout = null;
+    this.xpBoostUntil = 0;
+    this.xpBoostTimeout = null;
     this.proxyAgent = helper.getProxy();
     this.connect();
   }
@@ -93,6 +104,7 @@ export class Minion {
     if (this.t !== -1 && this.facebookBots) {
       manager.releaseToken(this.t, () => {
         this.t = -1;
+        this.token = -1;
         this.facebookBots = true;
       });
     }
@@ -146,10 +158,17 @@ export class Minion {
               7000
             );
           }
-          if (this.token !== -1 && !this.facebookBots) {
+          // FIX: fai il login con il token Facebook al primo spawn, così il
+          // bot gioca con l'account (livello, bonus ecc.). Prima la condizione
+          // (facebookBots) impediva sempre il login -> bot anonimi.
+          if (this.token !== -1 && !this.loggedIn) {
+            this.loggedIn = true;
             manager.requestLogin(this.token, (loginBuffer) => {
               this.send(loginBuffer, true);
             });
+            // FIX (nuovo): dopo il login attiva anche lo XP boost così i bot
+            // salgono di livello più in fretta fino al massimo.
+            this.useXpBoost();
           }
         }
         break;
@@ -170,6 +189,7 @@ export class Minion {
         this.facebookBots = true;
         manager.releaseToken(this.token, () => {
           this.token = -1;
+          this.t = -1;
           this.facebookBots = true;
         });
         break;
@@ -202,21 +222,52 @@ export class Minion {
     }
   }
   useMassBoost() {
+    if (this.token === -1) return;
     const currentTime = Date.now();
-    const accountName = manager.ut[this.token].name;
+    const accountName = manager.ut[this.token]?.name;
+    if (!accountName) return;
     const massBoostExpire = helper.getMassBoostExpire(accountName);
     if (massBoostExpire && currentTime < massBoostExpire) return;
     if (config.facebookBotSettings.useMassBoost && this.facebookBots) {
       manager.buyMassBoost(this.token, (buyBuffer) => {
         this.send(buyBuffer, true);
       });
-      manager.setMassBoostExpire(this.token, (expireBuffer) => {
-        this.send(expireBuffer, true);
+      // FIX: prima chiamava "manager.setMassBoostExpire" che NON esiste ->
+      // crash. Quello giusto è "useMassBoost" del TokenManager (attiva il boost).
+      manager.useMassBoost(this.token, (useBuffer) => {
+        this.send(useBuffer, true);
       });
       helper.clearExpiredMassBoosts();
       helper.setMassBoostExpire(accountName, currentTime + 60 * 60 * 1000);
       logger.info("Mass boost activated");
     }
+  }
+  // FIX (nuovo): attiva lo XP boost del TokenManager (buyXpBoost + useXpBoost)
+  // così i bot accumulano XP più in fretta e raggiungono il livello massimo.
+  // Riapplicato ogni ora mentre il bot resta connesso.
+  useXpBoost() {
+    if (this.token === -1) return;
+    if (!manager.ut[this.token]?.name) return;
+    const now = Date.now();
+    if (now < this.xpBoostUntil) return;
+    const enabled =
+      config.facebookBotSettings.useXpBoost === undefined ||
+      config.facebookBotSettings.useXpBoost;
+    if (!enabled || !this.facebookBots) return;
+    manager.buyXpBoost(this.token, (buyBuffer) => {
+      this.send(buyBuffer, true);
+    });
+    manager.useXpBoost(this.token, (useBuffer) => {
+      this.send(useBuffer, true);
+    });
+    this.xpBoostUntil = now + 60 * 60 * 1000;
+    logger.info("XP boost activated");
+    if (this.xpBoostTimeout) clearTimeout(this.xpBoostTimeout);
+    this.xpBoostTimeout = setTimeout(() => {
+      this.xpBoostUntil = 0;
+      this.xpBoostTimeout = null;
+      if (!this.isClosed && this.isAlive && this.loggedIn) this.useXpBoost();
+    }, 60 * 60 * 1000);
   }
   handleMessage(buffer) {
     const reader = SmartBuffer.fromBuffer(buffer);
@@ -423,8 +474,8 @@ export class Minion {
     }
     return enemies;
   }
-  // "enemies" viene calcolato UNA volta per tick in move() e riusato qui,
-  // prima veniva ricalcolato a ogni chiamata.
+  // "enemies" calcolati UNA volta per tick in move() e riusati qui
+  // (prima venivano ricalcolati 2-3 volte: meno lavoro = meno lag).
   nearestPlayer(x, y, size, enemies) {
     const maxDistance = 2000;
     const dxToMouse = this.client.userX / this.rX - x;
@@ -491,7 +542,7 @@ export class Minion {
   }
   move() {
     // Se il bot è morto / in respawn non c'è nulla da calcolare:
-    // prima queste righe giravano comunque (e generavano NaN) a ogni tick.
+    // prima questo lavoro girava comunque a ogni tick (e generava NaN).
     if (!this.isAlive) return;
     const cells = this.ownCells;
     const cellCount = cells.length;
@@ -504,7 +555,6 @@ export class Minion {
     }
     center.x /= cellCount;
     center.y /= cellCount;
-    // Scan dei nemici: UNA volta per tick (prima 2-3 volte).
     const enemies = this.checkEnemies(center.x, center.y, center.size);
     const playerTarget = this.nearestPlayer(
       center.x,
@@ -567,7 +617,7 @@ export class Minion {
       targetY = foodTarget.entity.y;
     }
     // Se la connessione è intasata (proxy lento), salta questo tick di
-    // movimento invece di accumulare coda: evita la "lag" crescente.
+    // movimento invece di accumulare coda: evita la lag crescente.
     if (this.ws && this.ws.bufferedAmount > 0x4000) return;
     this.send(buffers.moveTo(targetX, targetY, this.decryptionKey), true);
   }
@@ -589,6 +639,10 @@ export class Minion {
     if (this.followMouseTimeout) {
       clearTimeout(this.followMouseTimeout);
       this.followMouseTimeout = null;
+    }
+    if (this.xpBoostTimeout) {
+      clearTimeout(this.xpBoostTimeout);
+      this.xpBoostTimeout = null;
     }
   }
   stop() {
