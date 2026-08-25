@@ -616,9 +616,8 @@ export class Minion {
       targetX = foodTarget.entity.x;
       targetY = foodTarget.entity.y;
     }
-    // Se la connessione è intasata (proxy lento), salta questo tick di
-    // movimento invece di accumulare coda: evita la lag crescente.
-    if (this.ws && this.ws.bufferedAmount > 0x4000) return;
+    // Nessun freno sulla banda: il bot invia sempre il movimento,
+    // anche se la connessione/proxy è lenta (richiesto dall'utente).
     this.send(buffers.moveTo(targetX, targetY, this.decryptionKey), true);
   }
   clearIntervals() {
