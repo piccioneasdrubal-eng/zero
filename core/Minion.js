@@ -180,6 +180,8 @@ export class Minion {
         break;
       case 103:
         this.facebookBots = true;
+        // FIX: solo con un token reale. buyMassBoost(-1) crasha.
+        if (this.token === -1) break;
         this.useMassBoost();
         manager.buyMassBoost(this.token, (massBoostBuffer) => {
           this.send(massBoostBuffer, true);
@@ -187,6 +189,8 @@ export class Minion {
         break;
       case 104:
         this.facebookBots = true;
+        // FIX: solo con un token reale. releaseToken(-1) crasha.
+        if (this.token === -1) break;
         manager.releaseToken(this.token, () => {
           this.token = -1;
           this.t = -1;
@@ -413,7 +417,13 @@ export class Minion {
       this.isAlive = false;
       this.isNearMouse = false;
       const skinSettings = config.facebookBotSettings.skin;
-      if (skinSettings.enable && this.facebookBots) {
+      // FIX: solo i bot con token possono cambiare skin. Con lo spawn infinito
+      // molti bot non hanno token (-1) e changeSkin(-1) faceva CRASH.
+      if (
+        this.token !== -1 &&
+        skinSettings.enable &&
+        this.facebookBots
+      ) {
         const randomIndex = Math.floor(
           Math.random() * skinSettings.names.length
         );
