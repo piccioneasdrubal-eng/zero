@@ -73,4 +73,19 @@ setInterval(() => {
   });
 }, 60 * 60 * 1000);
 
+// ═══ IP di uscita (per whitelist del proxy) ═══
+// Render NON ha un IP fisso: cambia a ogni riavvio. Questo stampa nei log
+// l'IP attuale. Usalo solo se il tuo proxy richiede davvero la whitelist IP;
+// se invece supporta login utente/password, quello è molto più affidabile.
+async function logOutboundIP() {
+  try {
+    const res = await fetch('https://api.ipify.org');
+    const ip = (await res.text()).trim();
+    logger.info(`Outbound IP: ${ip}`);
+  } catch (e) {
+    logger.warn(`Could not fetch outbound IP: ${e.message}`);
+  }
+}
+logOutboundIP();
+
 export { manager };
