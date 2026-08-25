@@ -1,7 +1,7 @@
 export const config = {
     serverSettings: {
         port: 80,
-        secure: true,
+        secure: false,
         keyPath: 'path/to/privkey.pem',
         certPath: 'path/to/fullchain.pem'
     },
