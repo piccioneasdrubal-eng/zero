@@ -471,7 +471,7 @@ export class Minion {
       const dy = cell.y - y;
       const isBigger = cell.size > size * 0.85;
       const distance = Math.hypot(dx, dy) - size - cell.size;
-      const isClose = distance < 150;
+      const isClose = distance < 300;
       const sizeRatio = helper.size2mass(cell.size) / helper.size2mass(size);
       if (isBigger && isClose) {
         enemies.push({
@@ -566,65 +566,56 @@ export class Minion {
     center.x /= cellCount;
     center.y /= cellCount;
     const enemies = this.checkEnemies(center.x, center.y, center.size);
-    const playerTarget = this.nearestPlayer(
-      center.x,
-      center.y,
-      center.size,
-      enemies
-    );
-    const foodTarget = this.nearestEntity(
-      "isFood",
-      center.x,
-      center.y,
-      center.size,
-      enemies
-    );
-    const virusTarget = this.nearestEntity(
-      "isVirus",
-      center.x,
-      center.y,
-      center.size,
-      enemies
-    );
     const mouseDistance = helper.calculateDistance(
       center.x,
       center.y,
       this.client.userX / this.rX,
       this.client.userY / this.rY
     );
-    let targetX = playerTarget.x;
-    let targetY = playerTarget.y;
     this.isNearMouse =
       mouseDistance < 4000 + helper.size2mass(center.size) * 0.5;
-    if (!this.client.isAlive) {
-      targetX = playerTarget.x;
-      targetY = playerTarget.y;
-    }
-    if (this.followMouse) {
-      const useAI = this.client.botAi;
-      const useVShield = this.client.botVShield;
-      if (useAI && useVShield) {
-        if (virusTarget.entity) {
-          targetX = virusTarget.entity.x;
-          targetY = virusTarget.entity.y;
-        } else if (foodTarget.entity) {
-          targetX = foodTarget.entity.x;
-          targetY = foodTarget.entity.y;
-        }
-      } else if (!useAI && useVShield) {
-        if (virusTarget.entity && virusTarget.distance < 10000) {
-          targetX = virusTarget.entity.x;
-          targetY = virusTarget.entity.y;
-        }
-      } else if (useAI && !useVShield) {
-        if (foodTarget.entity) {
-          targetX = foodTarget.entity.x;
-          targetY = foodTarget.entity.y;
-        }
+
+    let targetX;
+    let targetY;
+
+    // 1) FUGA: se c'è un nemico più grande e vicino, scappa via subito.
+    //    Più il nemico è grande rispetto a noi, più forte è la spinta.
+    if (enemies.length > 0) {
+      let fleeX = 0;
+      let fleeY = 0;
+      for (const enemy of enemies) {
+        const strength = Math.min(enemy.sizeRatio * 12, 30);
+        // enemy.dx punta verso il nemico -> sottraiamo per scappare in senso opposto
+        fleeX -= (enemy.dx / enemy.distance) * strength;
+        fleeY -= (enemy.dy / enemy.distance) * strength;
       }
-    } else if (foodTarget.entity) {
-      targetX = foodTarget.entity.x;
-      targetY = foodTarget.entity.y;
+      const norm = 1 + Math.hypot(fleeX, fleeY);
+      targetX = center.x + (fleeX / norm) * 2000;
+      targetY = center.y + (fleeY / norm) * 2000;
+    } else {
+      // 2) CRESCITA: senza pericoli, mangia il cibo più vicino in continuazione.
+      //    Questo fa crescere il bot molto più in fretta -> vince di più.
+      const food = this.nearestEntity(
+        "isFood",
+        center.x,
+        center.y,
+        center.size,
+        enemies
+      );
+      if (food.entity) {
+        targetX = food.entity.x;
+        targetY = food.entity.y;
+      } else {
+        // 3) Nessun cibo in vista: vai verso il bersaglio / il mouse.
+        const pt = this.nearestPlayer(
+          center.x,
+          center.y,
+          center.size,
+          enemies
+        );
+        targetX = pt.x;
+        targetY = pt.y;
+      }
     }
     // Nessun freno sulla banda: il bot invia sempre il movimento,
     // anche se la connessione/proxy è lenta (richiesto dall'utente).
