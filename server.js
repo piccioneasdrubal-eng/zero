@@ -10,9 +10,11 @@ const server = helper.createServer();
 const wss = new WebSocketServer({ server: server });
 
 // ═══ Health check HTTP per Render & co. ═══
+// IMPORTANTE: deve rispondere 200, altrimenti Render considera il servizio
+// "non sano", lo fa ripartire e ogni riavvio provoca lag (cold start).
 server.on('request', (req, res) => {
   if (req.url === '/' || req.url === '/health') {
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('XevBots OK');
   }
 });
