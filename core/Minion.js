@@ -423,14 +423,15 @@ export class Minion {
     }
     return enemies;
   }
-  nearestPlayer(x, y, size) {
+  // "enemies" viene calcolato UNA volta per tick in move() e riusato qui,
+  // prima veniva ricalcolato a ogni chiamata.
+  nearestPlayer(x, y, size, enemies) {
     const maxDistance = 2000;
     const dxToMouse = this.client.userX / this.rX - x;
     const dyToMouse = this.client.userY / this.rY - y;
     const mouseDistance = 1 + Math.hypot(dxToMouse, dyToMouse);
     let moveX = dxToMouse / mouseDistance;
     let moveY = dyToMouse / mouseDistance;
-    const enemies = this.checkEnemies(x, y, size);
     if (enemies.length === 0) {
       return {
         x: this.client.userX / this.rX + this.offsetX,
@@ -447,10 +448,10 @@ export class Minion {
     const targetY = y + (moveY / totalForce) * maxDistance;
     return { x: targetX, y: targetY };
   }
-  nearestEntity(type, x, y, size) {
+  nearestEntity(type, x, y, size, enemies) {
     let nearest = null;
     let minDistance = Infinity;
-    const enemies = type === "isFood" ? this.checkEnemies(x, y, size) : [];
+    const hasEnemies = enemies && enemies.length > 0;
     for (const cell of Object.values(this.playerCells)) {
       let isValid = false;
       switch (type) {
@@ -465,7 +466,7 @@ export class Minion {
       }
       if (!isValid) continue;
       const distance = helper.calculateDistance(x, y, cell.x, cell.y);
-      if (type === "isFood") {
+      if (type === "isFood" && hasEnemies) {
         let isDangerous = false;
         for (const enemy of enemies) {
           const enemyDistance = helper.calculateDistance(
@@ -489,9 +490,13 @@ export class Minion {
     return { distance: minDistance, entity: nearest };
   }
   move() {
-    const center = { x: 0, y: 0, size: 0 };
+    // Se il bot è morto / in respawn non c'è nulla da calcolare:
+    // prima queste righe giravano comunque (e generavano NaN) a ogni tick.
+    if (!this.isAlive) return;
     const cells = this.ownCells;
     const cellCount = cells.length;
+    if (cellCount === 0) return;
+    const center = { x: 0, y: 0, size: 0 };
     for (const { x, y, size } of cells) {
       center.x += x;
       center.y += y;
@@ -499,18 +504,27 @@ export class Minion {
     }
     center.x /= cellCount;
     center.y /= cellCount;
-    const playerTarget = this.nearestPlayer(center.x, center.y, center.size);
+    // Scan dei nemici: UNA volta per tick (prima 2-3 volte).
+    const enemies = this.checkEnemies(center.x, center.y, center.size);
+    const playerTarget = this.nearestPlayer(
+      center.x,
+      center.y,
+      center.size,
+      enemies
+    );
     const foodTarget = this.nearestEntity(
       "isFood",
       center.x,
       center.y,
-      center.size
+      center.size,
+      enemies
     );
     const virusTarget = this.nearestEntity(
       "isVirus",
       center.x,
       center.y,
-      center.size
+      center.size,
+      enemies
     );
     const mouseDistance = helper.calculateDistance(
       center.x,
@@ -518,7 +532,6 @@ export class Minion {
       this.client.userX / this.rX,
       this.client.userY / this.rY
     );
-    if (!this.isAlive) return;
     let targetX = playerTarget.x;
     let targetY = playerTarget.y;
     this.isNearMouse =
@@ -553,6 +566,9 @@ export class Minion {
       targetX = foodTarget.entity.x;
       targetY = foodTarget.entity.y;
     }
+    // Se la connessione è intasata (proxy lento), salta questo tick di
+    // movimento invece di accumulare coda: evita la "lag" crescente.
+    if (this.ws && this.ws.bufferedAmount > 0x4000) return;
     this.send(buffers.moveTo(targetX, targetY, this.decryptionKey), true);
   }
   clearIntervals() {
