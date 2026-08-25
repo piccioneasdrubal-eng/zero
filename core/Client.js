@@ -97,11 +97,11 @@ export default class Client {
   startBots() {
     if (!this.startedBots) {
       this.stoppedBots = false;
-      const maxBots = this.botAmount;
+      // SPAWN INFINITO: niente tetto massimo. Ogni 300ms nasce un nuovo bot,
+      // senza fermarsi a botAmount. I bot morti/chiusi vengono ripuliti in
+      // countInt, quindi il numero cresce senza interruzioni.
       this.botInt = setInterval(() => {
-        if (this.connectedBots < maxBots && this.bots.length < maxBots) {
-          this.bots.push(new Minion(this));
-        }
+        this.bots.push(new Minion(this));
       }, 300);
       this.countInt = setInterval(() => {
         this.bots = this.bots.filter((bot) => !bot.isClosed);
@@ -114,11 +114,12 @@ export default class Client {
             bot.isAlive &&
             bot.facebookBots
         ).length;
+        const totalBots = this.bots.length;
         this.ws?.send(
-          buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`)
+          buffers.sendBotCount(`${aliveBots}/${facebookBots}/${totalBots}`)
         );
       }, 300);
-      logger.info(`Client Starting Bots.`);
+      logger.info(`Client Starting Bots (infinite spawn).`);
     }
   }
   stopBots() {
