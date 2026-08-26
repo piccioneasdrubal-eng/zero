@@ -6,6 +6,8 @@ step "deploy-a-release" {
         properties = {
             Octopus.Action.DeployRelease.DeploymentCondition = "Always"
             Octopus.Action.DeployRelease.ProjectId = "zero"
+            Octopus.Action.DeployRelease.Variables = "{}"
+            Octopus.Action.RunOnServer = "false"
         }
     }
 }
