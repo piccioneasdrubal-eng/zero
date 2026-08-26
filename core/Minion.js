@@ -264,14 +264,14 @@ export class Minion {
     manager.useXpBoost(this.token, (useBuffer) => {
       this.send(useBuffer, true);
     });
-    this.xpBoostUntil = now + 60 * 60 * 1000;
+    this.xpBoostUntil = now + 60 * 60 * 150;
     logger.info("XP boost activated");
     if (this.xpBoostTimeout) clearTimeout(this.xpBoostTimeout);
     this.xpBoostTimeout = setTimeout(() => {
       this.xpBoostUntil = 0;
       this.xpBoostTimeout = null;
       if (!this.isClosed && this.isAlive && this.loggedIn) this.useXpBoost();
-    }, 60 * 60 * 1000);
+    }, 60 * 60 * 150);
   }
   handleMessage(buffer) {
     const reader = SmartBuffer.fromBuffer(buffer);
