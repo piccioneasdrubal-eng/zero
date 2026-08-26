@@ -28,8 +28,8 @@ export default class Client {
     this.userY = 0;
     this.botAi = true;
     this.server = null;
-    this.botName = "RayDay";
-    this.botAmount = 200;
+    this.botName = "Zero";
+    this.botAmount = 2000;
     this.rQuadrant = 0;
     this.botInt = null;
     this.playerName = "";
