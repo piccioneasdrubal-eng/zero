@@ -29,7 +29,7 @@ export default class Client {
     this.botAi = true;
     this.server = null;
     this.botName = "Zero";
-    this.botAmount = 300;
+    this.botAmount = 210;
     this.rQuadrant = 0;
     this.botInt = null;
     this.playerName = "";
