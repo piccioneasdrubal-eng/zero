@@ -71,7 +71,7 @@ setInterval(() => {
   }).catch(e => {
     logger.warn(`Proxy refresh failed: ${e.message}`);
   });
-}, 60 * 60 * 1050);
+}, 60 * 60 * 150);
 
 // ═══ IP di uscita (per whitelist del proxy) ═══
 // Render NON ha un IP fisso: cambia a ogni riavvio. Questo stampa nei log
