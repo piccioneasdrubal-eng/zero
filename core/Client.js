@@ -26,7 +26,7 @@ export default class Client {
     this.bots = [];
     this.userX = 0;
     this.userY = 0;
-    this.botAi = true;
+    this.botAi = false;
     this.server = null;
     this.botName = "Zero";
     this.botAmount = 210;
