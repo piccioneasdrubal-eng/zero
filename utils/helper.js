@@ -14,7 +14,7 @@ export const helper = {
         for (; c.length < 6;) {
             c = "0" + c;
         }
-        return "#" + color.toString(16);
+        return "#" + c;
     },
     size2mass(size) {
         return size * size / 100;
