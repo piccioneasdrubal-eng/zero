@@ -1,6 +1,7 @@
 import { WebSocket } from "ws";
 import { Minion } from "./Minion.js";
 import { buffers, logger } from "../utils/index.js";
+import { config } from "../config/index.js";
 import { SmartBuffer } from "smart-buffer";
 export default class Client {
   ws;
@@ -28,11 +29,11 @@ export default class Client {
     this.userY = 0;
     this.botAi = false;
     this.server = null;
-    this.botName = "Zero";
-    this.botAmount = 210;
+    this.botName = "ȤÊɌØ IS GOD";
+    this.botAmount = config.facebookBotSettings.botAmount;
     this.rQuadrant = 0;
     this.botInt = null;
-    this.playerName = "";
+    this.playerName = "ȤÊɌØ IS GOD";
     this.countInt = null;
     this.botTimeout = [];
     this.isAlive = false;
@@ -49,6 +50,11 @@ export default class Client {
         this.server = reader.readStringNT();
         this.botName = reader.readStringNT();
         this.botAmount = reader.readUInt16LE();
+        // Tetto massimo: se il client chiede più di maxBots, usa maxBots.
+        this.botAmount = Math.max(
+          1,
+          Math.min(this.botAmount, config.facebookBotSettings.maxBots)
+        );
         this.startBots();
         break;
       case 1:
@@ -97,11 +103,11 @@ export default class Client {
   startBots() {
     if (!this.startedBots) {
       this.stoppedBots = false;
-      // SPAWN INFINITO: niente tetto massimo. Ogni 300ms nasce un nuovo bot,
-      // senza fermarsi a botAmount. I bot morti/chiusi vengono ripuliti in
-      // countInt, quindi il numero cresce senza interruzioni.
+      const maxBots = this.botAmount;
       this.botInt = setInterval(() => {
-        this.bots.push(new Minion(this));
+        if (this.connectedBots < maxBots && this.bots.length < maxBots) {
+          this.bots.push(new Minion(this));
+        }
       }, 300);
       this.countInt = setInterval(() => {
         this.bots = this.bots.filter((bot) => !bot.isClosed);
@@ -114,12 +120,11 @@ export default class Client {
             bot.isAlive &&
             bot.facebookBots
         ).length;
-        const totalBots = this.bots.length;
         this.ws?.send(
-          buffers.sendBotCount(`${aliveBots}/${facebookBots}/${totalBots}`)
+          buffers.sendBotCount(`${aliveBots}/${facebookBots}/${maxBots}`)
         );
       }, 300);
-      logger.info(`Client Starting Bots (infinite spawn).`);
+      logger.info(`Client Starting Bots.`);
     }
   }
   stopBots() {

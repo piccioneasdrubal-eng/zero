@@ -7,7 +7,6 @@ import { config } from "../config/index.js";
 
 export class Minion {
   t;
-  token;
   ws;
   rX;
   rY;
@@ -32,11 +31,8 @@ export class Minion {
   moveInt;
   errorTimeout;
   myCellIds;
-  loggedIn;
   followMouseTimeout;
   spawnTimeout;
-  xpBoostUntil;
-  xpBoostTimeout;
 
   constructor(client) {
     this.ws = null;
@@ -49,11 +45,7 @@ export class Minion {
     this.myCellIds = {};
     this.ownCells = [];
     this.moveInt = null;
-    // FIX: assegna il token al campo giusto. Prima veniva salvato in "t"
-    // ma il resto del codice leggeva "token" (mai valorizzato) -> i bot
-    // non usavano mai i token Facebook (niente login, niente livello, niente boost).
-    this.token = manager.t();
-    this.t = this.token; // alias per la compatibilità con onclose/release
+    this.t = config.facebookBotSettings.useFacebookTokens ? manager.t() : -1;
     this.client = client;
     this.isAlive = false;
     this.isClosed = false;
@@ -66,12 +58,9 @@ export class Minion {
     this.spawnTimeout = null;
     this.isConnected = false;
     this.isNearMouse = false;
-    this.facebookBots = true;
+    this.facebookBots = false;
     this.mapOffsetFixed = false;
-    this.loggedIn = false;
     this.followMouseTimeout = null;
-    this.xpBoostUntil = 0;
-    this.xpBoostTimeout = null;
     this.proxyAgent = helper.getProxy();
     this.connect();
   }
@@ -79,7 +68,7 @@ export class Minion {
     this.ws = new WebSocket(this.client.server, {
       agent: this.proxyAgent,
       headers: helper.generateHeaders(),
-      rejectUnauthorized: true,
+      rejectUnauthorized: false,
     });
     this.ws.binaryType = "nodebuffer";
     this.ws.onopen = this.onopen.bind(this);
@@ -87,7 +76,7 @@ export class Minion {
     this.ws.onerror = this.onerror.bind(this);
     this.ws.onmessage = this.onmessage.bind(this);
   }
-  send(buffer, encrypt = true) {
+  send(buffer, encrypt = false) {
     if (!this.ws) return;
     encrypt && (buffer = helper.xorBuffer(buffer, this.encryptionKey));
     this.encryptionKey &&
@@ -104,8 +93,7 @@ export class Minion {
     if (this.t !== -1 && this.facebookBots) {
       manager.releaseToken(this.t, () => {
         this.t = -1;
-        this.token = -1;
-        this.facebookBots = true;
+        this.facebookBots = false;
       });
     }
   }
@@ -113,7 +101,7 @@ export class Minion {
     this.isClosed = true;
     this.clearTimeouts();
     this.clearIntervals();
-    this.facebookBots = true;
+    this.facebookBots = false;
     this.errorTimeout = setTimeout(() => {
       if (
         this.ws?.readyState === WebSocket.CONNECTING ||
@@ -158,17 +146,15 @@ export class Minion {
               7000
             );
           }
-          // FIX: fai il login con il token Facebook al primo spawn, così il
-          // bot gioca con l'account (livello, bonus ecc.). Prima la condizione
-          // (facebookBots) impediva sempre il login -> bot anonimi.
-          if (this.token !== -1 && !this.loggedIn) {
-            this.loggedIn = true;
-            manager.requestLogin(this.token, (loginBuffer) => {
+          if (this.t !== -1 && !this.facebookBots) {
+            manager.requestLogin(this.t, (loginBuffer) => {
               this.send(loginBuffer, true);
             });
-            // FIX (nuovo): dopo il login attiva anche lo XP boost così i bot
-            // salgono di livello più in fretta fino al massimo.
-            this.useXpBoost();
+            this.facebookBots = true;
+            // FIX massa 150: attiva subito il mass boost appena il token FB è
+            // collegato, così la cella nasce già a 150 (delt/doublesplit).
+            // Il boost è persistente per account, quindi vale per i respawn.
+            this.useMassBoost();
           }
         }
         break;
@@ -180,21 +166,16 @@ export class Minion {
         break;
       case 103:
         this.facebookBots = true;
-        // FIX: solo con un token reale. buyMassBoost(-1) crasha.
-        if (this.token === -1) break;
         this.useMassBoost();
-        manager.buyMassBoost(this.token, (massBoostBuffer) => {
+        manager.buyMassBoost(this.t, (massBoostBuffer) => {
           this.send(massBoostBuffer, true);
         });
         break;
       case 104:
-        this.facebookBots = true;
-        // FIX: solo con un token reale. releaseToken(-1) crasha.
-        if (this.token === -1) break;
-        manager.releaseToken(this.token, () => {
-          this.token = -1;
+        this.facebookBots = false;
+        manager.releaseToken(this.t, () => {
           this.t = -1;
-          this.facebookBots = true;
+          this.facebookBots = false;
         });
         break;
       case 241:
@@ -226,52 +207,23 @@ export class Minion {
     }
   }
   useMassBoost() {
-    if (this.token === -1) return;
+    if (this.t === -1) return;
     const currentTime = Date.now();
-    const accountName = manager.ut[this.token]?.name;
+    const accountName = manager.ut[this.t]?.name;
     if (!accountName) return;
     const massBoostExpire = helper.getMassBoostExpire(accountName);
     if (massBoostExpire && currentTime < massBoostExpire) return;
     if (config.facebookBotSettings.useMassBoost && this.facebookBots) {
-      manager.buyMassBoost(this.token, (buyBuffer) => {
+      manager.buyMassBoost(this.t, (buyBuffer) => {
         this.send(buyBuffer, true);
       });
-      // FIX: prima chiamava "manager.setMassBoostExpire" che NON esiste ->
-      // crash. Quello giusto è "useMassBoost" del TokenManager (attiva il boost).
-      manager.useMassBoost(this.token, (useBuffer) => {
-        this.send(useBuffer, true);
+      manager.setMassBoostExpire(this.t, (expireBuffer) => {
+        this.send(expireBuffer, true);
       });
       helper.clearExpiredMassBoosts();
       helper.setMassBoostExpire(accountName, currentTime + 60 * 60 * 1000);
       logger.info("Mass boost activated");
     }
-  }
-  // FIX (nuovo): attiva lo XP boost del TokenManager (buyXpBoost + useXpBoost)
-  // così i bot accumulano XP più in fretta e raggiungono il livello massimo.
-  // Riapplicato ogni ora mentre il bot resta connesso.
-  useXpBoost() {
-    if (this.token === -1) return;
-    if (!manager.ut[this.token]?.name) return;
-    const now = Date.now();
-    if (now < this.xpBoostUntil) return;
-    const enabled =
-      config.facebookBotSettings.useXpBoost === undefined ||
-      config.facebookBotSettings.useXpBoost;
-    if (!enabled || !this.facebookBots) return;
-    manager.buyXpBoost(this.token, (buyBuffer) => {
-      this.send(buyBuffer, true);
-    });
-    manager.useXpBoost(this.token, (useBuffer) => {
-      this.send(useBuffer, true);
-    });
-    this.xpBoostUntil = now + 60 * 60 * 150;
-    logger.info("XP boost activated");
-    if (this.xpBoostTimeout) clearTimeout(this.xpBoostTimeout);
-    this.xpBoostTimeout = setTimeout(() => {
-      this.xpBoostUntil = 0;
-      this.xpBoostTimeout = null;
-      if (!this.isClosed && this.isAlive && this.loggedIn) this.useXpBoost();
-    }, 60 * 60 * 150);
   }
   handleMessage(buffer) {
     const reader = SmartBuffer.fromBuffer(buffer);
@@ -417,25 +369,19 @@ export class Minion {
       this.isAlive = false;
       this.isNearMouse = false;
       const skinSettings = config.facebookBotSettings.skin;
-      // FIX: solo i bot con token possono cambiare skin. Con lo spawn infinito
-      // molti bot non hanno token (-1) e changeSkin(-1) faceva CRASH.
-      if (
-        this.token !== -1 &&
-        skinSettings.enable &&
-        this.facebookBots
-      ) {
+      if (skinSettings.enable && this.facebookBots && this.t !== -1) {
         const randomIndex = Math.floor(
           Math.random() * skinSettings.names.length
         );
         const skinName = skinSettings.names[randomIndex];
-        manager.changeSkin(this.token, skinName, (skinBuffer) => {
+        manager.changeSkin(this.t, skinName, (skinBuffer) => {
           this.send(skinBuffer, true);
         });
       }
       this.spawnTimeout = setTimeout(
         () => this.send(buffers.spawn(this.client.botName), true),
         0
-      ); // 1000
+      );
     }
   }
   updateOffset(reader) {
@@ -471,7 +417,7 @@ export class Minion {
       const dy = cell.y - y;
       const isBigger = cell.size > size * 0.85;
       const distance = Math.hypot(dx, dy) - size - cell.size;
-      const isClose = distance < 300;
+      const isClose = distance < 150;
       const sizeRatio = helper.size2mass(cell.size) / helper.size2mass(size);
       if (isBigger && isClose) {
         enemies.push({
@@ -484,15 +430,14 @@ export class Minion {
     }
     return enemies;
   }
-  // "enemies" calcolati UNA volta per tick in move() e riusati qui
-  // (prima venivano ricalcolati 2-3 volte: meno lavoro = meno lag).
-  nearestPlayer(x, y, size, enemies) {
+  nearestPlayer(x, y, size) {
     const maxDistance = 2000;
     const dxToMouse = this.client.userX / this.rX - x;
     const dyToMouse = this.client.userY / this.rY - y;
     const mouseDistance = 1 + Math.hypot(dxToMouse, dyToMouse);
     let moveX = dxToMouse / mouseDistance;
     let moveY = dyToMouse / mouseDistance;
+    const enemies = this.checkEnemies(x, y, size);
     if (enemies.length === 0) {
       return {
         x: this.client.userX / this.rX + this.offsetX,
@@ -509,10 +454,10 @@ export class Minion {
     const targetY = y + (moveY / totalForce) * maxDistance;
     return { x: targetX, y: targetY };
   }
-  nearestEntity(type, x, y, size, enemies) {
+  nearestEntity(type, x, y, size) {
     let nearest = null;
     let minDistance = Infinity;
-    const hasEnemies = enemies && enemies.length > 0;
+    const enemies = type === "isFood" ? this.checkEnemies(x, y, size) : [];
     for (const cell of Object.values(this.playerCells)) {
       let isValid = false;
       switch (type) {
@@ -527,7 +472,7 @@ export class Minion {
       }
       if (!isValid) continue;
       const distance = helper.calculateDistance(x, y, cell.x, cell.y);
-      if (type === "isFood" && hasEnemies) {
+      if (type === "isFood") {
         let isDangerous = false;
         for (const enemy of enemies) {
           const enemyDistance = helper.calculateDistance(
@@ -551,13 +496,9 @@ export class Minion {
     return { distance: minDistance, entity: nearest };
   }
   move() {
-    // Se il bot è morto / in respawn non c'è nulla da calcolare:
-    // prima questo lavoro girava comunque a ogni tick (e generava NaN).
-    if (!this.isAlive) return;
+    const center = { x: 0, y: 0, size: 0 };
     const cells = this.ownCells;
     const cellCount = cells.length;
-    if (cellCount === 0) return;
-    const center = { x: 0, y: 0, size: 0 };
     for (const { x, y, size } of cells) {
       center.x += x;
       center.y += y;
@@ -565,60 +506,60 @@ export class Minion {
     }
     center.x /= cellCount;
     center.y /= cellCount;
-    const enemies = this.checkEnemies(center.x, center.y, center.size);
+    const playerTarget = this.nearestPlayer(center.x, center.y, center.size);
+    const foodTarget = this.nearestEntity(
+      "isFood",
+      center.x,
+      center.y,
+      center.size
+    );
+    const virusTarget = this.nearestEntity(
+      "isVirus",
+      center.x,
+      center.y,
+      center.size
+    );
     const mouseDistance = helper.calculateDistance(
       center.x,
       center.y,
       this.client.userX / this.rX,
       this.client.userY / this.rY
     );
+    if (!this.isAlive) return;
+    let targetX = playerTarget.x;
+    let targetY = playerTarget.y;
     this.isNearMouse =
       mouseDistance < 4000 + helper.size2mass(center.size) * 0.5;
-
-    let targetX;
-    let targetY;
-
-    // 1) FUGA: se c'è un nemico più grande e vicino, scappa via subito.
-    //    Più il nemico è grande rispetto a noi, più forte è la spinta.
-    if (enemies.length > 0) {
-      let fleeX = 0;
-      let fleeY = 0;
-      for (const enemy of enemies) {
-        const strength = Math.min(enemy.sizeRatio * 12, 30);
-        // enemy.dx punta verso il nemico -> sottraiamo per scappare in senso opposto
-        fleeX -= (enemy.dx / enemy.distance) * strength;
-        fleeY -= (enemy.dy / enemy.distance) * strength;
-      }
-      const norm = 1 + Math.hypot(fleeX, fleeY);
-      targetX = center.x + (fleeX / norm) * 2000;
-      targetY = center.y + (fleeY / norm) * 2000;
-    } else {
-      // 2) CRESCITA: senza pericoli, mangia il cibo più vicino in continuazione.
-      //    Questo fa crescere il bot molto più in fretta -> vince di più.
-      const food = this.nearestEntity(
-        "isFood",
-        center.x,
-        center.y,
-        center.size,
-        enemies
-      );
-      if (food.entity) {
-        targetX = food.entity.x;
-        targetY = food.entity.y;
-      } else {
-        // 3) Nessun cibo in vista: vai verso il bersaglio / il mouse.
-        const pt = this.nearestPlayer(
-          center.x,
-          center.y,
-          center.size,
-          enemies
-        );
-        targetX = pt.x;
-        targetY = pt.y;
-      }
+    if (!this.client.isAlive) {
+      targetX = playerTarget.x;
+      targetY = playerTarget.y;
     }
-    // Nessun freno sulla banda: il bot invia sempre il movimento,
-    // anche se la connessione/proxy è lenta (richiesto dall'utente).
+    if (this.followMouse) {
+      const useAI = this.client.botAi;
+      const useVShield = this.client.botVShield;
+      if (useAI && useVShield) {
+        if (virusTarget.entity) {
+          targetX = virusTarget.entity.x;
+          targetY = virusTarget.entity.y;
+        } else if (foodTarget.entity) {
+          targetX = foodTarget.entity.x;
+          targetY = foodTarget.entity.y;
+        }
+      } else if (!useAI && useVShield) {
+        if (virusTarget.entity && virusTarget.distance < 10000) {
+          targetX = virusTarget.entity.x;
+          targetY = virusTarget.entity.y;
+        }
+      } else if (useAI && !useVShield) {
+        if (foodTarget.entity) {
+          targetX = foodTarget.entity.x;
+          targetY = foodTarget.entity.y;
+        }
+      }
+    } else if (foodTarget.entity) {
+      targetX = foodTarget.entity.x;
+      targetY = foodTarget.entity.y;
+    }
     this.send(buffers.moveTo(targetX, targetY, this.decryptionKey), true);
   }
   clearIntervals() {
@@ -639,10 +580,6 @@ export class Minion {
     if (this.followMouseTimeout) {
       clearTimeout(this.followMouseTimeout);
       this.followMouseTimeout = null;
-    }
-    if (this.xpBoostTimeout) {
-      clearTimeout(this.xpBoostTimeout);
-      this.xpBoostTimeout = null;
     }
   }
   stop() {
