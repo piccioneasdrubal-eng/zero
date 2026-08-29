@@ -1,22 +1,19 @@
 {
-  "name": "xevbots",
-  "version": "1.0.0",
-  "description": "XevBots Agar.io Helper",
-  "main": "server.js",
+  "name": "xevbots-local",
+  "version": "2.0.0",
+  "private": true,
   "type": "module",
+  "description": "Server bot — versione privacy (nessuna connessione a server esterni)",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "keywords": [],
-  "author": "NelFeast",
-  "license": "ISC",
   "dependencies": {
-    "boxen": "^8.0.1",
-    "chalk": "^5.4.1",
-    "colors": "^1.4.0",
-    "https-proxy-agent": "^7.0.6",
-    "p-queue": "^8.1.0",
+    "boxen": "^8.0.0",
+    "chalk": "^5.4.0",
+    "https-proxy-agent": "^7.0.5",
+    "p-queue": "^8.0.1",
     "smart-buffer": "^4.2.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.0"
   }
 }
